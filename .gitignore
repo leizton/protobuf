@@ -201,3 +201,8 @@ cmake/cmake-build-debug/
 # IntelliJ
 .idea
 *.iml
+
+#
+a.out
+**/a.out.dSYM
+example/target

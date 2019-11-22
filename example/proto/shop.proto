@@ -1,0 +1,11 @@
+syntax = "proto2";
+
+package prototest;
+
+import "proto/user.proto";
+import "proto/shop_item.proto";
+
+message ShopCart {
+  required User user = 1;
+  repeated ShopItem shopList = 2;
+}
