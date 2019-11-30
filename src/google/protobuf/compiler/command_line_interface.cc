@@ -190,23 +190,8 @@ bool TryCreateParentDirectory(const std::string& prefix,
 
 // Get the absolute path of this protoc binary.
 bool GetProtocAbsolutePath(std::string* path) {
-#ifdef _WIN32
-  char buffer[MAX_PATH];
-  int len = GetModuleFileNameA(NULL, buffer, MAX_PATH);
-#elif defined(__APPLE__)
-  char buffer[PATH_MAX];
-  int len = 0;
-
-  char dirtybuffer[PATH_MAX];
-  uint32_t size = sizeof(dirtybuffer);
-  if (_NSGetExecutablePath(dirtybuffer, &size) == 0) {
-    realpath(dirtybuffer, buffer);
-    len = strlen(buffer);
-  }
-#else
   char buffer[PATH_MAX];
   int len = readlink("/proc/self/exe", buffer, PATH_MAX);
-#endif
   if (len > 0) {
     path->assign(buffer, len);
     return true;
@@ -215,51 +200,32 @@ bool GetProtocAbsolutePath(std::string* path) {
   }
 }
 
-// Whether a path is where google/protobuf/descriptor.proto and other well-known
-// type protos are installed.
+// 判断 path 是否是安装目录
 bool IsInstalledProtoPath(const std::string& path) {
   // Checking the descriptor.proto file should be good enough.
   std::string file_path = path + "/google/protobuf/descriptor.proto";
   return access(file_path.c_str(), F_OK) != -1;
 }
 
-// Add the paths where google/protobuf/descriptor.proto and other well-known
-// type protos are installed.
-void AddDefaultProtoPaths(
-    std::vector<std::pair<std::string, std::string> >* paths) {
-  // TODO(xiaofeng): The code currently only checks relative paths of where
-  // the protoc binary is installed. We probably should make it handle more
-  // cases than that.
+void AddDefaultProtoPaths(std::vector<std::pair<std::string, std::string> >* paths) {
+  // protoc所在目录的路径
   std::string path;
   if (!GetProtocAbsolutePath(&path)) {
     return;
   }
-  // Strip the binary name.
   size_t pos = path.find_last_of("/\\");
   if (pos == std::string::npos || pos == 0) {
     return;
   }
   path = path.substr(0, pos);
-  // Check the binary's directory.
+
   if (IsInstalledProtoPath(path)) {
     paths->push_back(std::pair<std::string, std::string>("", path));
     return;
   }
-  // Check if there is an include subdirectory.
+
   if (IsInstalledProtoPath(path + "/include")) {
-    paths->push_back(
-        std::pair<std::string, std::string>("", path + "/include"));
-    return;
-  }
-  // Check if the upper level directory has an "include" subdirectory.
-  pos = path.find_last_of("/\\");
-  if (pos == std::string::npos || pos == 0) {
-    return;
-  }
-  path = path.substr(0, pos);
-  if (IsInstalledProtoPath(path + "/include")) {
-    paths->push_back(
-        std::pair<std::string, std::string>("", path + "/include"));
+    paths->push_back(std::pair<std::string, std::string>("", path + "/include"));
     return;
   }
 }
@@ -822,14 +788,7 @@ void CommandLineInterface::AllowPlugins(const std::string& exe_name_prefix) {
 
 int CommandLineInterface::Run(int argc, const char* const argv[]) {
   Clear();
-  switch (ParseArguments(argc, argv)) {
-    case PARSE_ARGUMENT_DONE_AND_EXIT:
-      return 0;
-    case PARSE_ARGUMENT_FAIL:
-      return 1;
-    case PARSE_ARGUMENT_DONE_AND_CONTINUE:
-      break;
-  }
+  ParseArguments(argc, argv);
 
   std::vector<const FileDescriptor*> parsed_files;
   std::unique_ptr<DiskSourceTree> disk_source_tree;
@@ -838,20 +797,11 @@ int CommandLineInterface::Run(int argc, const char* const argv[]) {
   std::unique_ptr<SimpleDescriptorDatabase> descriptor_set_in_database;
   std::unique_ptr<SourceTreeDescriptorDatabase> source_tree_database;
 
-  // Any --descriptor_set_in FileDescriptorSet objects will be used as a
-  // fallback to input_files on command line, so create that db first.
-  if (!descriptor_set_in_names_.empty()) {
-    descriptor_set_in_database.reset(new SimpleDescriptorDatabase());
-    if (!PopulateSimpleDescriptorDatabase(descriptor_set_in_database.get())) {
-      return 1;
-    }
-  }
-
   disk_source_tree.reset(new DiskSourceTree());
-  InitializeDiskSourceTree(disk_source_tree.get(), descriptor_set_in_database.get());
+  InitializeDiskSourceTree(disk_source_tree.get(), nullptr);
 
   source_tree_database.reset(new SourceTreeDescriptorDatabase(
-      disk_source_tree.get(), descriptor_set_in_database.get()
+      disk_source_tree.get(), nullptr
   ));
 
   descriptor_pool.reset(new DescriptorPool(source_tree_database.get()));
@@ -971,20 +921,13 @@ int CommandLineInterface::Run(int argc, const char* const argv[]) {
   return 0;
 }
 
-bool CommandLineInterface::InitializeDiskSourceTree(
-    DiskSourceTree* source_tree, DescriptorDatabase* fallback_database) {
-  AddDefaultProtoPaths(&proto_path_);
-
-  // Set up the source tree.
+bool CommandLineInterface::InitializeDiskSourceTree(DiskSourceTree* source_tree, DescriptorDatabase* fallback_database=nullptr) {
   for (int i = 0; i < proto_path_.size(); i++) {
     source_tree->MapPath(proto_path_[i].first, proto_path_[i].second);
   }
 
   // Map input files to virtual paths if possible.
-  if (!MakeInputsBeProtoPathRelative(source_tree, fallback_database)) {
-    return false;
-  }
-
+  MakeInputsBeProtoPathRelative(source_tree, nullptr);
   return true;
 }
 
@@ -1121,21 +1064,16 @@ void CommandLineInterface::Clear() {
   direct_dependencies_explicitly_set_ = false;
 }
 
-bool CommandLineInterface::MakeProtoProtoPathRelative(
-    DiskSourceTree* source_tree, std::string* proto,
-    DescriptorDatabase* fallback_database) {
+bool CommandLineInterface::MakeProtoProtoPathRelative(DiskSourceTree* source_tree, std::string* proto, DescriptorDatabase* fallback_database) {
   // If it's in the fallback db, don't report non-existent file errors.
   FileDescriptorProto fallback_file;
-  bool in_fallback_database =
-      fallback_database != nullptr &&
-      fallback_database->FindFileByName(*proto, &fallback_file);
+  bool in_fallback_database = false;
 
   if (access(proto->c_str(), F_OK) < 0) {
     // input_file 是 virtual_path
     std::string disk_file;
     // virtual_path 转 disk_path
-    if (source_tree->VirtualFileToDiskFile(*proto, &disk_file) ||
-        in_fallback_database) {
+    if (source_tree->VirtualFileToDiskFile(*proto, &disk_file)) {
       return true;
     } else {
       std::cerr << *proto << ": " << strerror(ENOENT) << std::endl;
@@ -1144,44 +1082,21 @@ bool CommandLineInterface::MakeProtoProtoPathRelative(
   }
 
   std::string virtual_file, shadowing_disk_file;
-  switch (source_tree->DiskFileToVirtualFile(*proto, &virtual_file,
-                                             &shadowing_disk_file)) {
+  switch (source_tree->DiskFileToVirtualFile(*proto, &virtual_file, &shadowing_disk_file)) {
     case DiskSourceTree::SUCCESS:
       *proto = virtual_file;
       break;
     case DiskSourceTree::SHADOWED:
-      std::cerr << *proto << ": Input is shadowed in the --proto_path by \""
-                << shadowing_disk_file
-                << "\".  Either use the latter file as your input or reorder "
-                   "the --proto_path so that the former file's location "
-                   "comes first."
-                << std::endl;
       return false;
     case DiskSourceTree::CANNOT_OPEN:
-      if (in_fallback_database) {
-        return true;
-      }
       std::cerr << *proto << ": " << strerror(errno) << std::endl;
       return false;
     case DiskSourceTree::NO_MAPPING: {
       // Try to interpret the path as a virtual path.
       std::string disk_file;
-      if (source_tree->VirtualFileToDiskFile(*proto, &disk_file) ||
-          in_fallback_database) {
+      if (source_tree->VirtualFileToDiskFile(*proto, &disk_file)) {
         return true;
       } else {
-        // The input file path can't be mapped to any --proto_path and it also
-        // can't be interpreted as a virtual path.
-        std::cerr
-            << *proto
-            << ": File does not reside within any path "
-               "specified using --proto_path (or -I).  You must specify a "
-               "--proto_path which encompasses this file.  Note that the "
-               "proto_path must be an exact prefix of the .proto file "
-               "names -- protoc is too dumb to figure out when two paths "
-               "(e.g. absolute and relative) are equivalent (it's harder "
-               "than you think)."
-            << std::endl;
         return false;
       }
     }
@@ -1189,18 +1104,12 @@ bool CommandLineInterface::MakeProtoProtoPathRelative(
   return true;
 }
 
-bool CommandLineInterface::MakeInputsBeProtoPathRelative(
-    DiskSourceTree* source_tree, DescriptorDatabase* fallback_database) {
+bool CommandLineInterface::MakeInputsBeProtoPathRelative(DiskSourceTree* source_tree, DescriptorDatabase* fallback_database) {
   for (auto& input_file : input_files_) {
-    if (!MakeProtoProtoPathRelative(source_tree, &input_file,
-                                    fallback_database)) {
-      return false;
-    }
+    MakeProtoProtoPathRelative(source_tree, &input_file, nullptr);
   }
-
   return true;
 }
-
 
 bool CommandLineInterface::ExpandArgumentFile(
     const std::string& file, std::vector<std::string>* arguments) {
@@ -1228,12 +1137,6 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::ParseArguments(
     arguments.push_back(argv[i]);
   }
 
-  // if no arguments are given, show help
-  if (arguments.empty()) {
-    PrintHelpText();
-    return PARSE_ARGUMENT_DONE_AND_EXIT;  // Exit without running compiler.
-  }
-
   // Iterate through all arguments and parse them.
   for (int i = 0; i < arguments.size(); ++i) {
     std::string name, value;
@@ -1253,43 +1156,7 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::ParseArguments(
     if (status != PARSE_ARGUMENT_DONE_AND_CONTINUE) return status;
   }
 
-  // Make sure each plugin option has a matching plugin output.
-  bool foundUnknownPluginOption = false;
-  for (std::map<std::string, std::string>::const_iterator i =
-           plugin_parameters_.begin();
-       i != plugin_parameters_.end(); ++i) {
-    if (plugins_.find(i->first) != plugins_.end()) {
-      continue;
-    }
-    bool foundImplicitPlugin = false;
-    for (std::vector<OutputDirective>::const_iterator j =
-             output_directives_.begin();
-         j != output_directives_.end(); ++j) {
-      if (j->generator == NULL) {
-        std::string plugin_name = PluginName(plugin_prefix_, j->name);
-        if (plugin_name == i->first) {
-          foundImplicitPlugin = true;
-          break;
-        }
-      }
-    }
-    if (!foundImplicitPlugin) {
-      std::cerr << "Unknown flag: "
-                // strip prefix + "gen-" and add back "_opt"
-                << "--" + i->first.substr(plugin_prefix_.size() + 4) + "_opt"
-                << std::endl;
-      foundUnknownPluginOption = true;
-    }
-  }
-  if (foundUnknownPluginOption) {
-    return PARSE_ARGUMENT_FAIL;
-  }
-
-  // The --proto_path & --descriptor_set_in flags both specify places to look
-  // for proto files. If neither were given, use the current working directory.
-  if (proto_path_.empty() && descriptor_set_in_names_.empty()) {
-    proto_path_.push_back(std::pair<std::string, std::string>("", "."));
-  }
+  proto_path_.push_back(std::pair<std::string, std::string>("", "."));
 
   return PARSE_ARGUMENT_DONE_AND_CONTINUE;
 }
@@ -1298,59 +1165,18 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::ParseArguments(
 // @return 是否解析到了value
 bool CommandLineInterface::ParseArgument(const char* arg,
                                          std::string* name, std::string* value) {
-  bool parsed_value = false;
-
   if (arg[0] != '-') {
-    // Not a flag.
+    // value
     name->clear();
-    parsed_value = true;
     *value = arg;
+    return true;
   } else if (arg[1] == '-') {
-    // Two dashes:  Multi-character name, with '=' separating name and
-    //   value.
+    // --name=value
     const char* equals_pos = strchr(arg, '=');
-    if (equals_pos != NULL) {
-      *name = std::string(arg, equals_pos - arg);
-      *value = equals_pos + 1;
-      parsed_value = true;  // 完整解析了
-    } else {
-      *name = arg;
-    }
-  } else {
-    // One dash:  One-character name, all subsequent characters are the
-    //   value.
-    if (arg[1] == '\0') {
-      // arg is just "-".  We treat this as an input file, except that at
-      // present this will just lead to a "file not found" error.
-      name->clear();
-      *value = arg;
-      parsed_value = true;
-    } else {
-      *name = std::string(arg, 2);
-      *value = arg + 2;
-      parsed_value = !value->empty();
-    }
-  }
-
-  // Need to return true iff the next arg should be used as the value for this
-  // one, false otherwise.
-
-  if (parsed_value) {
-    // We already parsed a value for this flag.
+    *name = std::string(arg, equals_pos - arg);
+    *value = equals_pos + 1;
     return true;
   }
-
-  if (*name == "-h" || *name == "--help" || *name == "--disallow_services" ||
-      *name == "--include_imports" || *name == "--include_source_info" ||
-      *name == "--version" || *name == "--decode_raw" ||
-      *name == "--print_free_field_numbers") {
-    // HACK:  These are the only flags that don't take a value.
-    //   They probably should not be hard-coded like this but for now it's
-    //   not worth doing better.
-    return true;
-  }
-
-  // Next argument is the flag value.
   return false;
 }
 
@@ -1359,280 +1185,7 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::InterpretArgumen
 {
   if (name.empty()) {
     input_files_.push_back(value);
-
-  } else if (name == "-I" || name == "--proto_path") {
-    // Java's -classpath (and some other languages) delimits path components
-    // with colons.  Let's accept that syntax too just to make things more
-    // intuitive.
-    std::vector<std::string> parts = Split(
-        value, CommandLineInterface::kPathSeparator,
-        true);
-
-    for (int i = 0; i < parts.size(); i++) {
-      std::string virtual_path;
-      std::string disk_path;
-
-      std::string::size_type equals_pos = parts[i].find_first_of('=');
-      if (equals_pos == std::string::npos) {
-        virtual_path = "";
-        disk_path = parts[i];
-      } else {
-        virtual_path = parts[i].substr(0, equals_pos);
-        disk_path = parts[i].substr(equals_pos + 1);
-      }
-
-      // Don't use make_pair as the old/default standard library on Solaris
-      // doesn't support it without explicit template parameters, which are
-      // incompatible with C++0x's make_pair.
-      proto_path_.push_back(
-          std::pair<std::string, std::string>(virtual_path, disk_path));
-    }
-
-  } else if (name == "--direct_dependencies") {
-    if (direct_dependencies_explicitly_set_) {
-      std::cerr << name
-                << " may only be passed once. To specify multiple "
-                   "direct dependencies, pass them all as a single "
-                   "parameter separated by ':'."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-    direct_dependencies_explicitly_set_ = true;
-    std::vector<std::string> direct =
-        Split(value, ":", true);
-    GOOGLE_DCHECK(direct_dependencies_.empty());
-    direct_dependencies_.insert(direct.begin(), direct.end());
-
-  } else if (name == "--direct_dependencies_violation_msg") {
-    direct_dependencies_violation_msg_ = value;
-
-  } else if (name == "--descriptor_set_in") {
-    if (!descriptor_set_in_names_.empty()) {
-      std::cerr << name
-                << " may only be passed once. To specify multiple "
-                   "descriptor sets, pass them all as a single "
-                   "parameter separated by '"
-                << CommandLineInterface::kPathSeparator << "'." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (value.empty()) {
-      std::cerr << name << " requires a non-empty value." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (!dependency_out_name_.empty()) {
-      std::cerr << name << " cannot be used with --dependency_out."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-    descriptor_set_in_names_ = Split(
-        value, CommandLineInterface::kPathSeparator,
-        true);
-
-  } else if (name == "-o" || name == "--descriptor_set_out") {
-    if (!descriptor_set_out_name_.empty()) {
-      std::cerr << name << " may only be passed once." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (value.empty()) {
-      std::cerr << name << " requires a non-empty value." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (mode_ != MODE_COMPILE) {
-      std::cerr
-          << "Cannot use --encode or --decode and generate descriptors at the "
-             "same time."
-          << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    descriptor_set_out_name_ = value;
-
-  } else if (name == "--dependency_out") {
-    if (!dependency_out_name_.empty()) {
-      std::cerr << name << " may only be passed once." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (value.empty()) {
-      std::cerr << name << " requires a non-empty value." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (!descriptor_set_in_names_.empty()) {
-      std::cerr << name << " cannot be used with --descriptor_set_in."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    dependency_out_name_ = value;
-
-  } else if (name == "--include_imports") {
-    if (imports_in_descriptor_set_) {
-      std::cerr << name << " may only be passed once." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    imports_in_descriptor_set_ = true;
-
-  } else if (name == "--include_source_info") {
-    if (source_info_in_descriptor_set_) {
-      std::cerr << name << " may only be passed once." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    source_info_in_descriptor_set_ = true;
-
-  } else if (name == "-h" || name == "--help") {
-    PrintHelpText();
-    return PARSE_ARGUMENT_DONE_AND_EXIT;  // Exit without running compiler.
-
-  } else if (name == "--version") {
-    if (!version_info_.empty()) {
-      std::cout << version_info_ << std::endl;
-    }
-    std::cout << "libprotoc " << internal::VersionString(PROTOBUF_VERSION)
-              << std::endl;
-    return PARSE_ARGUMENT_DONE_AND_EXIT;  // Exit without running compiler.
-
-  } else if (name == "--disallow_services") {
-    disallow_services_ = true;
-
-  } else if (name == "--encode" || name == "--decode" ||
-             name == "--decode_raw") {
-    if (mode_ != MODE_COMPILE) {
-      std::cerr << "Only one of --encode and --decode can be specified."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (!output_directives_.empty() || !descriptor_set_out_name_.empty()) {
-      std::cerr << "Cannot use " << name
-                << " and generate code or descriptors at the same time."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-    mode_ = (name == "--encode") ? MODE_ENCODE : MODE_DECODE;
-
-    if (value.empty() && name != "--decode_raw") {
-      std::cerr << "Type name for " << name << " cannot be blank." << std::endl;
-      if (name == "--decode") {
-        std::cerr << "To decode an unknown message, use --decode_raw."
-                  << std::endl;
-      }
-      return PARSE_ARGUMENT_FAIL;
-    } else if (!value.empty() && name == "--decode_raw") {
-      std::cerr << "--decode_raw does not take a parameter." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-    codec_type_ = value;
-
-  } else if (name == "--error_format") {
-    if (value == "gcc") {
-      error_format_ = ERROR_FORMAT_GCC;
-    } else if (value == "msvs") {
-      error_format_ = ERROR_FORMAT_MSVS;
-    } else {
-      std::cerr << "Unknown error format: " << value << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-  } else if (name == "--plugin") {
-    if (plugin_prefix_.empty()) {
-      std::cerr << "This compiler does not support plugins." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-
-    std::string plugin_name;
-    std::string path;
-
-    std::string::size_type equals_pos = value.find_first_of('=');
-    if (equals_pos == std::string::npos) {
-      // Use the basename of the file.
-      std::string::size_type slash_pos = value.find_last_of('/');
-      if (slash_pos == std::string::npos) {
-        plugin_name = value;
-      } else {
-        plugin_name = value.substr(slash_pos + 1);
-      }
-      path = value;
-    } else {
-      plugin_name = value.substr(0, equals_pos);
-      path = value.substr(equals_pos + 1);
-    }
-
-    plugins_[plugin_name] = path;
-
-  } else if (name == "--print_free_field_numbers") {
-    if (mode_ != MODE_COMPILE) {
-      std::cerr << "Cannot use " << name
-                << " and use --encode, --decode or print "
-                << "other info at the same time." << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    if (!output_directives_.empty() || !descriptor_set_out_name_.empty()) {
-      std::cerr << "Cannot use " << name
-                << " and generate code or descriptors at the same time."
-                << std::endl;
-      return PARSE_ARGUMENT_FAIL;
-    }
-    mode_ = MODE_PRINT;
-    print_mode_ = PRINT_FREE_FIELDS;
-
-  } else {
-    // Some other flag.  Look it up in the generators list.
-    const GeneratorInfo* generator_info =
-        FindOrNull(generators_by_flag_name_, name);
-    if (generator_info == NULL &&
-        (plugin_prefix_.empty() || !HasSuffixString(name, "_out"))) {
-      // Check if it's a generator option flag.
-      generator_info = FindOrNull(generators_by_option_name_, name);
-      if (generator_info != NULL) {
-        std::string* parameters =
-            &generator_parameters_[generator_info->flag_name];
-        if (!parameters->empty()) {
-          parameters->append(",");
-        }
-        parameters->append(value);
-      } else if (HasPrefixString(name, "--") && HasSuffixString(name, "_opt")) {
-        std::string* parameters =
-            &plugin_parameters_[PluginName(plugin_prefix_, name)];
-        if (!parameters->empty()) {
-          parameters->append(",");
-        }
-        parameters->append(value);
-      } else {
-        std::cerr << "Unknown flag: " << name << std::endl;
-        return PARSE_ARGUMENT_FAIL;
-      }
-    } else {
-      // It's an output flag.  Add it to the output directives.
-      if (mode_ != MODE_COMPILE) {
-        std::cerr << "Cannot use --encode, --decode or print .proto info and "
-                     "generate code at the same time."
-                  << std::endl;
-        return PARSE_ARGUMENT_FAIL;
-      }
-
-      OutputDirective directive;
-      directive.name = name;
-      if (generator_info == NULL) {
-        directive.generator = NULL;
-      } else {
-        directive.generator = generator_info->generator;
-      }
-
-      // Split value at ':' to separate the generator parameter from the
-      // filename.  However, avoid doing this if the colon is part of a valid
-      // Windows-style absolute path.
-      std::string::size_type colon_pos = value.find_first_of(':');
-      if (colon_pos == std::string::npos || IsWindowsAbsolutePath(value)) {
-        directive.output_location = value;
-      } else {
-        directive.parameter = value.substr(0, colon_pos);
-        directive.output_location = value.substr(colon_pos + 1);
-      }
-
-      output_directives_.push_back(directive);
-    }
   }
-
   return PARSE_ARGUMENT_DONE_AND_CONTINUE;
 }
 
