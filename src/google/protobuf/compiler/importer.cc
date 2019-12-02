@@ -231,56 +231,21 @@ static inline char LastChar(const std::string& str) {
   return str[str.size() - 1];
 }
 
-// Given a path, returns an equivalent path with these changes:
-// - On Windows, any backslashes are replaced with forward slashes.
-// - Any instances of the directory "." are removed.
-// - Any consecutive '/'s are collapsed into a single slash.
-// Note that the resulting string may be empty.
-//
-// TODO(kenton):  It would be nice to handle "..", e.g. so that we can figure
-//   out that "foo/bar.proto" is inside "baz/../foo".  However, if baz is a
-//   symlink or doesn't exist, then things get complicated, and we can't
-//   actually determine this without investigating the filesystem, probably
-//   in non-portable ways.  So, we punt.
-//
-// TODO(kenton):  It would be nice to use realpath() here except that it
-//   resolves symbolic links.  This could cause problems if people place
-//   symbolic links in their source tree.  For example, if you executed:
-//     protoc --proto_path=foo foo/bar/baz.proto
-//   then if foo/bar is a symbolic link, foo/bar/baz.proto will canonicalize
-//   to a path which does not appear to be under foo, and thus the compiler
-//   will complain that baz.proto is not inside the --proto_path.
+// 移除目录路径中的 /./
 static std::string CanonicalizePath(std::string path) {
-#ifdef _WIN32
-  // The Win32 API accepts forward slashes as a path delimiter even though
-  // backslashes are standard.  Let's avoid confusion and use only forward
-  // slashes.
-  if (HasPrefixString(path, "\\\\")) {
-    // Avoid converting two leading backslashes.
-    path = "\\\\" + StringReplace(path.substr(2), "\\", "/", true);
-  } else {
-    path = StringReplace(path, "\\", "/", true);
-  }
-#endif
-
   std::vector<std::string> canonical_parts;
-  std::vector<std::string> parts = Split(
-      path, "/", true);  // Note:  Removes empty parts.
-  for (int i = 0; i < parts.size(); i++) {
-    if (parts[i] == ".") {
-      // Ignore.
-    } else {
-      canonical_parts.push_back(parts[i]);
+  std::vector<std::string> parts = Split(path, "/", true);
+  for (auto& part : parts) {
+    if (!part.empty() && part != ".") {
+      canonical_parts.push_back(part);
     }
   }
   std::string result = Join(canonical_parts, "/");
   if (!path.empty() && path[0] == '/') {
-    // Restore leading slash.
     result = '/' + result;
   }
-  if (!path.empty() && LastChar(path) == '/' && !result.empty() &&
-      LastChar(result) != '/') {
-    // Restore trailing slash.
+  if (!path.empty() && LastChar(path) == '/' &&
+      !result.empty() && LastChar(result) != '/') {
     result += '/';
   }
   return result;
@@ -367,7 +332,7 @@ static bool ApplyMapping(const std::string& filename,
 
 void DiskSourceTree::MapPath(const std::string& virtual_path,
                              const std::string& disk_path) {
-  mappings_.push_back(Mapping(virtual_path, CanonicalizePath(disk_path)));
+  mappings_.push_back(Mapping(virtual_path, disk_path));
 }
 
 DiskSourceTree::DiskFileToVirtualFileResult
