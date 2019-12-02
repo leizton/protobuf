@@ -14,4 +14,4 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::ParseArguments(i
 // @[01.02]
 bool CommandLineInterface::InitializeDiskSourceTree(DiskSourceTree* source_tree, DescriptorDatabase* fallback_database=nullptr)
   for (auto& e : proto_path_)
-    source_tree->MapPath(e.first, e.second)
+    source_tree->mappings_.push_back(Mapping(virtual_path=e.first, disk_path=e.second))
