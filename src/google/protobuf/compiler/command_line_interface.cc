@@ -790,23 +790,23 @@ int CommandLineInterface::Run(int argc, const char* const argv[]) {
   Clear();
   ParseArguments(argc, argv);
 
-  std::vector<const FileDescriptor*> parsed_files;
-  std::unique_ptr<DiskSourceTree> disk_source_tree;
   std::unique_ptr<ErrorPrinter> error_collector;
-  std::unique_ptr<DescriptorPool> descriptor_pool;
   std::unique_ptr<SimpleDescriptorDatabase> descriptor_set_in_database;
-  std::unique_ptr<SourceTreeDescriptorDatabase> source_tree_database;
 
+  std::unique_ptr<DiskSourceTree> disk_source_tree;
   disk_source_tree.reset(new DiskSourceTree());
   InitializeDiskSourceTree(disk_source_tree.get(), nullptr);
 
+  std::unique_ptr<SourceTreeDescriptorDatabase> source_tree_database;
   source_tree_database.reset(new SourceTreeDescriptorDatabase(
       disk_source_tree.get(), nullptr
   ));
 
+  std::unique_ptr<DescriptorPool> descriptor_pool;
   descriptor_pool.reset(new DescriptorPool(source_tree_database.get()));
-
   descriptor_pool->EnforceWeakDependencies(true);
+
+  std::vector<const FileDescriptor*> parsed_files;
   if (!ParseInputFiles(descriptor_pool.get(), &parsed_files)) {
     return 1;
   }
@@ -926,8 +926,9 @@ bool CommandLineInterface::InitializeDiskSourceTree(DiskSourceTree* source_tree,
     source_tree->MapPath(proto_path_[i].first, proto_path_[i].second);
   }
 
-  // Map input files to virtual paths if possible.
-  MakeInputsBeProtoPathRelative(source_tree, nullptr);
+  // 检查input_files_都可访问
+  // MakeInputsBeProtoPathRelative(source_tree, nullptr);
+
   return true;
 }
 
@@ -994,49 +995,13 @@ bool CommandLineInterface::VerifyInputFilesInDescriptors(
   return true;
 }
 
-bool CommandLineInterface::ParseInputFiles(
-    DescriptorPool* descriptor_pool,
-    std::vector<const FileDescriptor*>* parsed_files) {
-
-  // Parse each file.
+bool CommandLineInterface::ParseInputFiles(DescriptorPool* descriptor_pool,
+                                           std::vector<const FileDescriptor*>* parsed_files) {
   for (const auto& input_file : input_files_) {
-    // Import the file.
     descriptor_pool->AddUnusedImportTrackFile(input_file);
-    const FileDescriptor* parsed_file =
-        descriptor_pool->FindFileByName(input_file);
+    const FileDescriptor* parsed_file = descriptor_pool->FindFileByName(input_file);
     descriptor_pool->ClearUnusedImportTrackFiles();
-    if (parsed_file == NULL) {
-      return false;
-    }
     parsed_files->push_back(parsed_file);
-
-    // Enforce --disallow_services.
-    if (disallow_services_ && parsed_file->service_count() > 0) {
-      std::cerr << parsed_file->name()
-                << ": This file contains services, but "
-                   "--disallow_services was used."
-                << std::endl;
-      return false;
-    }
-
-    // Enforce --direct_dependencies
-    if (direct_dependencies_explicitly_set_) {
-      bool indirect_imports = false;
-      for (int i = 0; i < parsed_file->dependency_count(); i++) {
-        if (direct_dependencies_.find(parsed_file->dependency(i)->name()) ==
-            direct_dependencies_.end()) {
-          indirect_imports = true;
-          std::cerr << parsed_file->name() << ": "
-                    << StringReplace(direct_dependencies_violation_msg_, "%s",
-                                     parsed_file->dependency(i)->name(),
-                                     true /* replace_all */)
-                    << std::endl;
-        }
-      }
-      if (indirect_imports) {
-        return false;
-      }
-    }
   }
   return true;
 }
@@ -1065,43 +1030,25 @@ void CommandLineInterface::Clear() {
 }
 
 bool CommandLineInterface::MakeProtoProtoPathRelative(DiskSourceTree* source_tree, std::string* proto, DescriptorDatabase* fallback_database) {
-  // If it's in the fallback db, don't report non-existent file errors.
-  FileDescriptorProto fallback_file;
-  bool in_fallback_database = false;
-
   if (access(proto->c_str(), F_OK) < 0) {
-    // input_file 是 virtual_path
+    // input_file不能访问, 因此是virtual_path
     std::string disk_file;
-    // virtual_path 转 disk_path
-    if (source_tree->VirtualFileToDiskFile(*proto, &disk_file)) {
-      return true;
-    } else {
-      std::cerr << *proto << ": " << strerror(ENOENT) << std::endl;
-      return false;
-    }
+    return DiskSourceTree::VirtualFileToDiskFile(*proto, &disk_file);
   }
 
   std::string virtual_file, shadowing_disk_file;
-  switch (source_tree->DiskFileToVirtualFile(*proto, &virtual_file, &shadowing_disk_file)) {
+  switch (DiskSourceTree::DiskFileToVirtualFile(*proto, &virtual_file, &shadowing_disk_file)) {
     case DiskSourceTree::SUCCESS:
       *proto = virtual_file;
-      break;
+      return true;
     case DiskSourceTree::SHADOWED:
       return false;
     case DiskSourceTree::CANNOT_OPEN:
-      std::cerr << *proto << ": " << strerror(errno) << std::endl;
       return false;
-    case DiskSourceTree::NO_MAPPING: {
-      // Try to interpret the path as a virtual path.
+    case DiskSourceTree::NO_MAPPING:
       std::string disk_file;
-      if (source_tree->VirtualFileToDiskFile(*proto, &disk_file)) {
-        return true;
-      } else {
-        return false;
-      }
-    }
+      return DiskSourceTree::VirtualFileToDiskFile(*proto, &disk_file);
   }
-  return true;
 }
 
 bool CommandLineInterface::MakeInputsBeProtoPathRelative(DiskSourceTree* source_tree, DescriptorDatabase* fallback_database) {

@@ -89,6 +89,7 @@ struct Symbol {
     PACKAGE
   };
   Type type;
+
   union {
     const Descriptor* descriptor;
     const FieldDescriptor* field_descriptor;
@@ -100,22 +101,27 @@ struct Symbol {
     const FileDescriptor* package_file_descriptor;
   };
 
-  inline Symbol() : type(NULL_SYMBOL) { descriptor = nullptr; }
-  inline bool IsNull() const { return type == NULL_SYMBOL; }
-  inline bool IsType() const { return type == MESSAGE || type == ENUM; }
-  inline bool IsAggregate() const {
-    return type == MESSAGE || type == PACKAGE || type == ENUM ||
-           type == SERVICE;
+  Symbol() : type(NULL_SYMBOL) { descriptor = nullptr; }
+
+  explicit Symbol(const Descriptor* v) {
+    type = MESSAGE;
+    descriptor = v;
+  }
+
+  bool IsNull() const { return type == NULL_SYMBOL; }
+  bool IsType() const { return type == MESSAGE || type == ENUM; }
+  bool IsAggregate() const {
+    return type == MESSAGE || type == PACKAGE || type == ENUM || type == SERVICE;
   }
 
 #define CONSTRUCTOR(TYPE, TYPE_CONSTANT, FIELD) \
-  inline explicit Symbol(const TYPE* value) {   \
+  explicit Symbol(const TYPE* value) {   \
     type = TYPE_CONSTANT;                       \
     this->FIELD = value;                        \
   }
 
   // 参数是不同Type的构造函数
-  CONSTRUCTOR(Descriptor, MESSAGE, descriptor)
+  // CONSTRUCTOR(Descriptor, MESSAGE, descriptor)
   CONSTRUCTOR(FieldDescriptor, FIELD, field_descriptor)
   CONSTRUCTOR(OneofDescriptor, ONEOF, oneof_descriptor)
   CONSTRUCTOR(EnumDescriptor, ENUM, enum_descriptor)
@@ -955,8 +961,7 @@ Symbol DescriptorPool::Tables::FindByNameHelper(const DescriptorPool* pool,
   return result;
 }
 
-inline const FileDescriptor* DescriptorPool::Tables::FindFile(
-    const std::string& key) const {
+inline const FileDescriptor* DescriptorPool::Tables::FindFile(const std::string& key) const {
   return FindPtrOrNull(files_by_name_, key.c_str());
 }
 
@@ -1387,28 +1392,15 @@ void DescriptorPool::InternalAddGeneratedFile(
 //   there's any good way to factor it out.  Think about this some time when
 //   there's nothing more important to do (read: never).
 
-const FileDescriptor* DescriptorPool::FindFileByName(
-    const std::string& name) const {
+const FileDescriptor* DescriptorPool::FindFileByName(const std::string& name) const {
   MutexLockMaybe lock(mutex_);
-  if (fallback_database_ != nullptr) {
-    tables_->known_bad_symbols_.clear();
-    tables_->known_bad_files_.clear();
-  }
   const FileDescriptor* result = tables_->FindFile(name);
   if (result != nullptr) return result;
-  if (underlay_ != nullptr) {
-    result = underlay_->FindFileByName(name);
-    if (result != nullptr) return result;
-  }
-  if (TryFindFileInFallbackDatabase(name)) {
-    result = tables_->FindFile(name);
-    if (result != nullptr) return result;
-  }
-  return nullptr;
+  TryFindFileInFallbackDatabase(name);
+  return tables_->FindFile(name);
 }
 
-const FileDescriptor* DescriptorPool::FindFileContainingSymbol(
-    const std::string& symbol_name) const {
+const FileDescriptor* DescriptorPool::FindFileContainingSymbol(const std::string& symbol_name) const {
   MutexLockMaybe lock(mutex_);
   if (fallback_database_ != nullptr) {
     tables_->known_bad_symbols_.clear();
@@ -1850,18 +1842,10 @@ EnumDescriptor::FindReservedRangeContainingNumber(int number) const {
 
 // -------------------------------------------------------------------
 
-bool DescriptorPool::TryFindFileInFallbackDatabase(
-    const std::string& name) const {
-  if (fallback_database_ == nullptr) return false;
-
-  if (tables_->known_bad_files_.count(name) > 0) return false;
-
+bool DescriptorPool::TryFindFileInFallbackDatabase(const std::string& name) const {
   FileDescriptorProto file_proto;
-  if (!fallback_database_->FindFileByName(name, &file_proto) ||
-      BuildFileFromDatabase(file_proto) == nullptr) {
-    tables_->known_bad_files_.insert(name);
-    return false;
-  }
+  fallback_database_->FindFileByName(name, &file_proto);
+  BuildFileFromDatabase(file_proto);
   return true;
 }
 
@@ -3572,19 +3556,8 @@ const FileDescriptor* DescriptorPool::BuildFileCollectingErrors(
       .BuildFile(proto);
 }
 
-const FileDescriptor* DescriptorPool::BuildFileFromDatabase(
-    const FileDescriptorProto& proto) const {
-  mutex_->AssertHeld();
-  if (tables_->known_bad_files_.count(proto.name()) > 0) {
-    return nullptr;
-  }
-  const FileDescriptor* result =
-      DescriptorBuilder(this, tables_.get(), default_error_collector_)
-          .BuildFile(proto);
-  if (result == nullptr) {
-    tables_->known_bad_files_.insert(proto.name());
-  }
-  return result;
+const FileDescriptor* DescriptorPool::BuildFileFromDatabase(const FileDescriptorProto& proto) const {
+  return DescriptorBuilder(this, tables_.get(), nullptr).BuildFile(proto);
 }
 
 DescriptorBuilder::DescriptorBuilder(
@@ -4040,30 +4013,13 @@ bool DescriptorBuilder::AddSymbol(const std::string& full_name,
 void DescriptorBuilder::AddPackage(const std::string& name,
                                    const Message& proto,
                                    const FileDescriptor* file) {
-  if (tables_->AddSymbol(name, Symbol(file))) {
-    // Success.  Also add parent package, if any.
-    std::string::size_type dot_pos = name.find_last_of('.');
-    if (dot_pos == std::string::npos) {
-      // No parents.
-      ValidateSymbolName(name, name, proto);
-    } else {
-      // Has parent.
-      std::string* parent_name =
-          tables_->AllocateString(name.substr(0, dot_pos));
-      AddPackage(*parent_name, proto, file);
-      ValidateSymbolName(name.substr(dot_pos + 1), name, proto);
-    }
-  } else {
-    Symbol existing_symbol = tables_->FindSymbol(name);
-    // It's OK to redefine a package.
-    if (existing_symbol.type != Symbol::PACKAGE) {
-      // Symbol seems to have been defined in a different file.
-      AddError(name, proto, DescriptorPool::ErrorCollector::NAME,
-               "\"" + name +
-                   "\" is already defined (as something other than "
-                   "a package) in file \"" +
-                   existing_symbol.GetFile()->name() + "\".");
-    }
+  tables_->AddSymbol(name, Symbol(file));
+
+  // 递归加 parent pkg
+  std::string::size_type dot_pos = name.find_last_of('.');
+  if (dot_pos != std::string::npos) {
+    std::string* parent_name = tables_->AllocateString(name.substr(0, dot_pos));
+    AddPackage(*parent_name, proto, file);
   }
 }
 
@@ -4212,84 +4168,35 @@ static bool ExistingFileMatchesProto(const FileDescriptor* existing_file,
   return existing_proto.SerializeAsString() == proto.SerializeAsString();
 }
 
-const FileDescriptor* DescriptorBuilder::BuildFile(
-    const FileDescriptorProto& proto) {
+const FileDescriptor* DescriptorBuilder::BuildFile(const FileDescriptorProto& proto) {
   filename_ = proto.name();
 
-  // Check if the file already exists and is identical to the one being built.
-  // Note:  This only works if the input is canonical -- that is, it
-  //   fully-qualifies all type names, has no UninterpretedOptions, etc.
-  //   This is fine, because this idempotency "feature" really only exists to
-  //   accommodate one hack in the proto1->proto2 migration layer.
-  const FileDescriptor* existing_file = tables_->FindFile(filename_);
-  if (existing_file != nullptr) {
-    // File already in pool.  Compare the existing one to the input.
-    if (ExistingFileMatchesProto(existing_file, proto)) {
-      // They're identical.  Return the existing descriptor.
-      return existing_file;
-    }
-
-    // Not a match.  The error will be detected and handled later.
-  }
-
-  // Check to see if this file is already on the pending files list.
-  // TODO(kenton):  Allow recursive imports?  It may not work with some
-  //   (most?) programming languages.  E.g., in C++, a forward declaration
-  //   of a type is not sufficient to allow it to be used even in a
-  //   generated header file due to inlining.  This could perhaps be
-  //   worked around using tricks involving inserting #include statements
-  //   mid-file, but that's pretty ugly, and I'm pretty sure there are
-  //   some languages out there that do not allow recursive dependencies
-  //   at all.
-  for (int i = 0; i < tables_->pending_files_.size(); i++) {
-    if (tables_->pending_files_[i] == proto.name()) {
-      AddRecursiveImportError(proto, i);
-      return nullptr;
+  // solu proto's dependency
+  tables_->pending_files_.push_back(proto.name());
+  for (int i = 0; i < proto.dependency_size(); i++) {
+    if (tables_->FindFile(proto.dependency(i)) == nullptr) {
+      pool_->TryFindFileInFallbackDatabase(proto.dependency(i));
     }
   }
+  tables_->pending_files_.pop_back();
 
-  // If we have a fallback_database_, and we aren't doing lazy import building,
-  // attempt to load all dependencies now, before checkpointing tables_.  This
-  // avoids confusion with recursive checkpoints.
-  if (!pool_->lazily_build_dependencies_) {
-    if (pool_->fallback_database_ != nullptr) {
-      tables_->pending_files_.push_back(proto.name());
-      for (int i = 0; i < proto.dependency_size(); i++) {
-        if (tables_->FindFile(proto.dependency(i)) == nullptr &&
-            (pool_->underlay_ == nullptr ||
-             pool_->underlay_->FindFileByName(proto.dependency(i)) ==
-                 nullptr)) {
-          // We don't care what this returns since we'll find out below anyway.
-          pool_->TryFindFileInFallbackDatabase(proto.dependency(i));
-        }
-      }
-      tables_->pending_files_.pop_back();
-    }
-  }
-
-  // Checkpoint the tables so that we can roll back if something goes wrong.
   tables_->AddCheckpoint();
-
   FileDescriptor* result = BuildFileImpl(proto);
-
   file_tables_->FinalizeTables();
-  if (result) {
-    tables_->ClearLastCheckpoint();
-    result->finished_building_ = true;
-  } else {
-    tables_->RollbackToLastCheckpoint();
-  }
+  tables_->ClearLastCheckpoint();
+  result->finished_building_ = true;
 
   return result;
 }
 
-FileDescriptor* DescriptorBuilder::BuildFileImpl(
-    const FileDescriptorProto& proto) {
+FileDescriptor* DescriptorBuilder::BuildFileImpl(const FileDescriptorProto& proto) {
   FileDescriptor* result = tables_->Allocate<FileDescriptor>();
   file_ = result;
 
   result->is_placeholder_ = false;
   result->finished_building_ = false;
+  result->syntax_ = FileDescriptor::SYNTAX_PROTO3;
+
   SourceCodeInfo* info = nullptr;
   if (proto.has_source_code_info()) {
     info = tables_->AllocateMessage<SourceCodeInfo>();
@@ -4300,225 +4207,55 @@ FileDescriptor* DescriptorBuilder::BuildFileImpl(
   }
 
   file_tables_ = tables_->AllocateFileTables();
-  file_->tables_ = file_tables_;
-
-  if (!proto.has_name()) {
-    AddError("", proto, DescriptorPool::ErrorCollector::OTHER,
-             "Missing field: FileDescriptorProto.name.");
-  }
-
-  // TODO(liujisi): Report error when the syntax is empty after all the protos
-  // have added the syntax statement.
-  if (proto.syntax().empty() || proto.syntax() == "proto2") {
-    file_->syntax_ = FileDescriptor::SYNTAX_PROTO2;
-  } else if (proto.syntax() == "proto3") {
-    file_->syntax_ = FileDescriptor::SYNTAX_PROTO3;
-  } else {
-    file_->syntax_ = FileDescriptor::SYNTAX_UNKNOWN;
-    AddError(proto.name(), proto, DescriptorPool::ErrorCollector::OTHER,
-             "Unrecognized syntax: " + proto.syntax());
-  }
+  result->tables_ = file_tables_;
 
   result->name_ = tables_->AllocateString(proto.name());
   if (proto.has_package()) {
     result->package_ = tables_->AllocateString(proto.package());
   } else {
-    // We cannot rely on proto.package() returning a valid string if
-    // proto.has_package() is false, because we might be running at static
-    // initialization time, in which case default values have not yet been
-    // initialized.
     result->package_ = tables_->AllocateString("");
   }
   result->pool_ = pool_;
 
-  // Add to tables.
-  if (!tables_->AddFile(result)) {
-    AddError(proto.name(), proto, DescriptorPool::ErrorCollector::OTHER,
-             "A file with this name is already in the pool.");
-    // Bail out early so that if this is actually the exact same file, we
-    // don't end up reporting that every single symbol is already defined.
-    return nullptr;
-  }
+  tables_->AddFile(result);
+
   if (!result->package().empty()) {
     AddPackage(result->package(), proto, result);
   }
 
-  // Make sure all dependencies are loaded.
-  std::set<std::string> seen_dependencies;
-  result->dependency_count_ = proto.dependency_size();
-  result->dependencies_ =
-      tables_->AllocateArray<const FileDescriptor*>(proto.dependency_size());
-  if (pool_->lazily_build_dependencies_) {
-    result->dependencies_once_ = tables_->AllocateOnceDynamic();
-    result->dependencies_names_ =
-        tables_->AllocateArray<const std::string*>(proto.dependency_size());
-    if (proto.dependency_size() > 0) {
-      memset(result->dependencies_names_, 0,
-             sizeof(*result->dependencies_names_) * proto.dependency_size());
-    }
-  } else {
-    result->dependencies_once_ = nullptr;
-    result->dependencies_names_ = nullptr;
+  // copy message_type/enum_type/service/extension
+  result->message_type_count_ = proto.message_type_size();
+  AllocateArray(proto.message_type_size(), result->message_types_);
+  for (int i = 0; i < proto.message_type_size(); i++) {
+    BuildMessage(proto.message_type(i), nullptr, result->message_types_+i);
   }
-  unused_dependency_.clear();
-  std::set<int> weak_deps;
-  for (int i = 0; i < proto.weak_dependency_size(); ++i) {
-    weak_deps.insert(proto.weak_dependency(i));
-  }
-  for (int i = 0; i < proto.dependency_size(); i++) {
-    if (!seen_dependencies.insert(proto.dependency(i)).second) {
-      AddTwiceListedError(proto, i);
-    }
-
-    const FileDescriptor* dependency = tables_->FindFile(proto.dependency(i));
-    if (dependency == nullptr && pool_->underlay_ != nullptr) {
-      dependency = pool_->underlay_->FindFileByName(proto.dependency(i));
-    }
-
-    if (dependency == result) {
-      // Recursive import.  dependency/result is not fully initialized, and it's
-      // dangerous to try to do anything with it.  The recursive import error
-      // will be detected and reported in DescriptorBuilder::BuildFile().
-      return nullptr;
-    }
-
-    if (dependency == nullptr) {
-      if (!pool_->lazily_build_dependencies_) {
-        if (pool_->allow_unknown_ ||
-            (!pool_->enforce_weak_ && weak_deps.find(i) != weak_deps.end())) {
-          dependency =
-              pool_->NewPlaceholderFileWithMutexHeld(proto.dependency(i));
-        } else {
-          AddImportError(proto, i);
-        }
-      }
-    } else {
-      // Add to unused_dependency_ to track unused imported files.
-      // Note: do not track unused imported files for public import.
-      if (pool_->enforce_dependencies_ &&
-          (pool_->unused_import_track_files_.find(proto.name()) !=
-           pool_->unused_import_track_files_.end()) &&
-          (dependency->public_dependency_count() == 0)) {
-        unused_dependency_.insert(dependency);
-      }
-    }
-
-    result->dependencies_[i] = dependency;
-    if (pool_->lazily_build_dependencies_ && !dependency) {
-      result->dependencies_names_[i] =
-          tables_->AllocateString(proto.dependency(i));
-    }
-  }
-
-  // Check public dependencies.
-  int public_dependency_count = 0;
-  result->public_dependencies_ =
-      tables_->AllocateArray<int>(proto.public_dependency_size());
-  for (int i = 0; i < proto.public_dependency_size(); i++) {
-    // Only put valid public dependency indexes.
-    int index = proto.public_dependency(i);
-    if (index >= 0 && index < proto.dependency_size()) {
-      result->public_dependencies_[public_dependency_count++] = index;
-      // Do not track unused imported files for public import.
-      // Calling dependency(i) builds that file when doing lazy imports,
-      // need to avoid doing this. Unused dependency detection isn't done
-      // when building lazily, anyways.
-      if (!pool_->lazily_build_dependencies_) {
-        unused_dependency_.erase(result->dependency(index));
-      }
-    } else {
-      AddError(proto.name(), proto, DescriptorPool::ErrorCollector::OTHER,
-               "Invalid public dependency index.");
-    }
-  }
-  result->public_dependency_count_ = public_dependency_count;
-
-  // Build dependency set
-  dependencies_.clear();
-  // We don't/can't do proper dependency error checking when
-  // lazily_build_dependencies_, and calling dependency(i) will force
-  // a dependency to be built, which we don't want.
-  if (!pool_->lazily_build_dependencies_) {
-    for (int i = 0; i < result->dependency_count(); i++) {
-      RecordPublicDependencies(result->dependency(i));
-    }
-  }
-
-  // Check weak dependencies.
-  int weak_dependency_count = 0;
-  result->weak_dependencies_ =
-      tables_->AllocateArray<int>(proto.weak_dependency_size());
-  for (int i = 0; i < proto.weak_dependency_size(); i++) {
-    int index = proto.weak_dependency(i);
-    if (index >= 0 && index < proto.dependency_size()) {
-      result->weak_dependencies_[weak_dependency_count++] = index;
-    } else {
-      AddError(proto.name(), proto, DescriptorPool::ErrorCollector::OTHER,
-               "Invalid weak dependency index.");
-    }
-  }
-  result->weak_dependency_count_ = weak_dependency_count;
-
-  // Convert children.
-  BUILD_ARRAY(proto, result, message_type, BuildMessage, nullptr);
+  // BUILD_ARRAY(proto, result, message_type, BuildMessage, nullptr);
   BUILD_ARRAY(proto, result, enum_type, BuildEnum, nullptr);
   BUILD_ARRAY(proto, result, service, BuildService, nullptr);
   BUILD_ARRAY(proto, result, extension, BuildExtension, nullptr);
 
-  // Copy options.
+  // copy options
   if (!proto.has_options()) {
-    result->options_ = nullptr;  // Will set to default_instance later.
+    result->options_ = nullptr;
   } else {
     AllocateOptions(proto.options(), result);
   }
 
-  // Note that the following steps must occur in exactly the specified order.
-
-  // Cross-link.
   CrossLinkFile(result, proto);
 
   // Interpret any remaining uninterpreted options gathered into
   // options_to_interpret_ during descriptor building.  Cross-linking has made
   // extension options known, so all interpretations should now succeed.
-  if (!had_errors_) {
-    OptionInterpreter option_interpreter(this);
-    for (std::vector<OptionsToInterpret>::iterator iter =
-             options_to_interpret_.begin();
-         iter != options_to_interpret_.end(); ++iter) {
-      option_interpreter.InterpretOptions(&(*iter));
-    }
-    options_to_interpret_.clear();
-    if (info != nullptr) {
-      option_interpreter.UpdateSourceCodeInfo(info);
-    }
+  OptionInterpreter option_interpreter(this);
+  for (OptionsToInterpret& e : options_to_interpret_) {
+    option_interpreter.InterpretOptions(&e);
+  }
+  options_to_interpret_.clear();
+  if (info != nullptr) {
+    option_interpreter.UpdateSourceCodeInfo(info);
   }
 
-  // Validate options. See comments at InternalSetLazilyBuildDependencies about
-  // error checking and lazy import building.
-  if (!had_errors_ && !pool_->lazily_build_dependencies_) {
-    ValidateFileOptions(result, proto);
-  }
-
-  // Additional naming conflict check for map entry types. Only need to check
-  // this if there are already errors.
-  if (had_errors_) {
-    for (int i = 0; i < proto.message_type_size(); ++i) {
-      DetectMapConflicts(result->message_type(i), proto.message_type(i));
-    }
-  }
-
-
-  // Again, see comments at InternalSetLazilyBuildDependencies about error
-  // checking.
-  if (!unused_dependency_.empty() && !pool_->lazily_build_dependencies_) {
-    LogUnusedDependency(proto, result);
-  }
-
-  if (had_errors_) {
-    return nullptr;
-  } else {
-    return result;
-  }
+  return result;
 }
 
 
@@ -4535,12 +4272,11 @@ std::string* DescriptorBuilder::AllocateNameString(
 }
 
 void DescriptorBuilder::BuildMessage(const DescriptorProto& proto,
-                                     const Descriptor* parent,
+                                     const Descriptor* parent=nullptr,
                                      Descriptor* result) {
   const std::string& scope =
       (parent == nullptr) ? file_->package() : parent->full_name();
   std::string* full_name = AllocateNameString(scope, proto.name());
-  ValidateSymbolName(proto.name(), *full_name, proto);
 
   result->name_ = tables_->AllocateString(proto.name());
   result->full_name_ = full_name;

@@ -74,12 +74,7 @@ using google::protobuf::io::win32::open;
 // with a drive letter.  Example:  "C:\foo".  TODO(kenton):  Share this with
 // copy in command_line_interface.cc?
 static bool IsWindowsAbsolutePath(const std::string& text) {
-#if defined(_WIN32) || defined(__CYGWIN__)
-  return text.size() >= 3 && text[1] == ':' && isalpha(text[0]) &&
-         (text[2] == '/' || text[2] == '\\') && text.find_last_of(':') == 1;
-#else
   return false;
-#endif
 }
 
 MultiFileErrorCollector::~MultiFileErrorCollector() {}
@@ -296,23 +291,25 @@ static inline bool ContainsParentReference(const std::string& path) {
          HasSuffixString(path, "/..") || path.find("/../") != string::npos;
 }
 
-// Maps a file from an old location to a new one.  Typically, old_prefix is
-// a virtual path and new_prefix is its corresponding disk path.  Returns
-// false if the filename did not start with old_prefix, otherwise replaces
-// old_prefix with new_prefix and stores the result in *result.  Examples:
-//   string result;
-//   assert(ApplyMapping("foo/bar", "", "baz", &result));
-//   assert(result == "baz/foo/bar");
-//
-//   assert(ApplyMapping("foo/bar", "foo", "baz", &result));
-//   assert(result == "baz/bar");
-//
-//   assert(ApplyMapping("foo", "foo", "bar", &result));
-//   assert(result == "bar");
-//
-//   assert(!ApplyMapping("foo/bar", "baz", "qux", &result));
-//   assert(!ApplyMapping("foo/bar", "baz", "qux", &result));
-//   assert(!ApplyMapping("foobar", "foo", "baz", &result));
+/**
+  把 filename 的 old_prefix 前缀替换成 new_prefix.
+  ApplyMapping()返回true时, result才有意义
+
+  Examples:
+  string result;
+  assert(ApplyMapping("foo/bar", "", "baz", &result));
+  assert(result == "baz/foo/bar");
+  //
+  assert(ApplyMapping("foo/bar", "foo", "baz", &result));
+  assert(result == "baz/bar");
+  //
+  assert(ApplyMapping("foo", "foo", "bar", &result));
+  assert(result == "bar");
+  //
+  assert(!ApplyMapping("foo/bar", "baz", "qux", &result));
+  assert(!ApplyMapping("foo/bar", "baz", "qux", &result));
+  assert(!ApplyMapping("foobar", "foo", "baz", &result));
+*/
 static bool ApplyMapping(const std::string& filename,
                          const std::string& old_prefix,
                          const std::string& new_prefix,
@@ -323,7 +320,7 @@ static bool ApplyMapping(const std::string& filename,
       // We do not allow the file name to use "..".
       return false;
     }
-    if (HasPrefixString(filename, "/") || IsWindowsAbsolutePath(filename)) {
+    if (HasPrefixString(filename, "/")) {
       // This is an absolute path, so it isn't matched by the empty string.
       return false;
     }
@@ -377,44 +374,36 @@ DiskSourceTree::DiskFileToVirtualFileResult
 DiskSourceTree::DiskFileToVirtualFile(const std::string& disk_file,
                                       std::string* virtual_file,
                                       std::string* shadowing_disk_file) {
-  int mapping_index = -1;
   std::string canonical_disk_file = CanonicalizePath(disk_file);
 
+  // virtual_file不包含disk_path时 no_mapping, disk_file不是物理路径
+  int mapping_index = -1;
   for (int i = 0; i < mappings_.size(); i++) {
-    // Apply the mapping in reverse.
-    if (ApplyMapping(canonical_disk_file, mappings_[i].disk_path,
-                     mappings_[i].virtual_path, virtual_file)) {
-      // Success.
+    if (ApplyMapping(canonical_disk_file, mappings_[i].disk_path/* "." */,
+                     mappings_[i].virtual_path/* "" */, virtual_file)) {
       mapping_index = i;
       break;
     }
   }
-
   if (mapping_index == -1) {
     return NO_MAPPING;
   }
 
-  // Iterate through all mappings with higher precedence and verify that none
-  // of them map this file to some other existing file.
   for (int i = 0; i < mapping_index; i++) {
-    if (ApplyMapping(*virtual_file, mappings_[i].virtual_path,
-                     mappings_[i].disk_path, shadowing_disk_file)) {
+    if (ApplyMapping(*virtual_file, mappings_[i].virtual_path/* "" */,
+                     mappings_[i].disk_path/* "." */, shadowing_disk_file)) {
       if (access(shadowing_disk_file->c_str(), F_OK) >= 0) {
-        // File exists.
         return SHADOWED;
       }
     }
   }
   shadowing_disk_file->clear();
 
-  // Verify that we can open the file.  Note that this also has the side-effect
-  // of verifying that we are not canonicalizing away any non-existent
-  // directories.
+  // 判断disk_file是否能正常打开
   std::unique_ptr<io::ZeroCopyInputStream> stream(OpenDiskFile(disk_file));
   if (stream == NULL) {
     return CANNOT_OPEN;
   }
-
   return SUCCESS;
 }
 
