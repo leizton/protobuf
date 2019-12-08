@@ -423,7 +423,8 @@ Parser::LocationRecorder::LocationRecorder(const LocationRecorder& parent,
 }
 
 Parser::LocationRecorder::LocationRecorder(const LocationRecorder& parent,
-                                           int path1, int path2) {
+                                           int path1,
+                                           int path2) {
   Init(parent, parent.source_code_info_);
   AddPath(path1);
   AddPath(path2);
@@ -616,90 +617,40 @@ bool Parser::Parse(io::Tokenizer* input, FileDescriptorProto* file) {
   input_ = input;
   had_errors_ = false;
   syntax_identifier_.clear();
-  abcd
 
-  // Note that |file| could be NULL at this point if
-  // stop_after_syntax_identifier_ is true.  So, we conservatively allocate
-  // SourceCodeInfo on the stack, then swap it into the FileDescriptorProto
-  // later on.
   SourceCodeInfo source_code_info;
   source_code_info_ = &source_code_info;
 
-  if (LookingAtType(io::Tokenizer::TYPE_START)) {
-    // Advance to first token.
-    input_->NextWithComments(NULL, &upcoming_detached_comments_,
-                             &upcoming_doc_comments_);
-  }
+  LocationRecorder root_location(this);
 
-  {
-    LocationRecorder root_location(this);
-    root_location.RecordLegacyLocation(file,
-                                       DescriptorPool::ErrorCollector::OTHER);
+  // 历史遗留代码
+  // root_location.RecordLegacyLocation(file, DescriptorPool::ErrorCollector::OTHER);
 
-    if (require_syntax_identifier_ || LookingAt("syntax")) {
-      if (!ParseSyntaxIdentifier(root_location)) {
-        // Don't attempt to parse the file if we didn't recognize the syntax
-        // identifier.
-        return false;
-      }
-      // Store the syntax into the file.
-      if (file != NULL) file->set_syntax(syntax_identifier_);
-    } else if (!stop_after_syntax_identifier_) {
-      GOOGLE_LOG(WARNING) << "No syntax specified for the proto file: " << file->name()
-                   << ". Please use 'syntax = \"proto2\";' "
-                   << "or 'syntax = \"proto3\";' to specify a syntax "
-                   << "version. (Defaulted to proto2 syntax.)";
-      syntax_identifier_ = "proto2";
-    }
+  ParseSyntaxIdentifier(root_location);
+  file->set_syntax(syntax_identifier_);
 
-    if (stop_after_syntax_identifier_) return !had_errors_;
-
-    // Repeatedly parse statements until we reach the end of the file.
-    while (!AtEnd()) {
-      if (!ParseTopLevelStatement(file, root_location)) {
-        // This statement failed to parse.  Skip it, but keep looping to parse
-        // other statements.
-        SkipStatement();
-
-        if (LookingAt("}")) {
-          AddError("Unmatched \"}\".");
-          input_->NextWithComments(NULL, &upcoming_detached_comments_,
-                                   &upcoming_doc_comments_);
-        }
-      }
-    }
+  // Repeatedly parse statements until we reach the end of the file.
+  while (!AtEnd()) {
+    ParseTopLevelStatement(file, root_location);
   }
 
   input_ = NULL;
   source_code_info_ = NULL;
-  assert(file != NULL);
   source_code_info.Swap(file->mutable_source_code_info());
   return !had_errors_;
 }
 
 bool Parser::ParseSyntaxIdentifier(const LocationRecorder& parent) {
-  LocationRecorder syntax_location(parent,
-                                   FileDescriptorProto::kSyntaxFieldNumber);
-  DO(Consume(
-      "syntax",
-      "File must begin with a syntax statement, e.g. 'syntax = \"proto2\";'."));
+  LocationRecorder syntax_location(parent, FileDescriptorProto::kSyntaxFieldNumber);
+  DO(Consume("syntax", "File must begin with a syntax statement, e.g. 'syntax = \"proto2\";'."));
   DO(Consume("="));
+
   io::Tokenizer::Token syntax_token = input_->current();
   std::string syntax;
   DO(ConsumeString(&syntax, "Expected syntax identifier."));
   DO(ConsumeEndOfDeclaration(";", &syntax_location));
 
   syntax_identifier_ = syntax;
-
-  if (syntax != "proto2" && syntax != "proto3" &&
-      !stop_after_syntax_identifier_) {
-    AddError(syntax_token.line, syntax_token.column,
-             "Unrecognized syntax identifier \"" + syntax +
-                 "\".  This parser "
-                 "only recognizes \"proto2\" and \"proto3\".");
-    return false;
-  }
-
   return true;
 }
 
@@ -708,39 +659,47 @@ bool Parser::ParseTopLevelStatement(FileDescriptorProto* file,
   if (TryConsumeEndOfDeclaration(";", NULL)) {
     // empty statement; ignore
     return true;
-  } else if (LookingAt("message")) {
+  }
+  else if (LookingAt("message")) {
     LocationRecorder location(root_location,
                               FileDescriptorProto::kMessageTypeFieldNumber,
                               file->message_type_size());
     return ParseMessageDefinition(file->add_message_type(), location, file);
-  } else if (LookingAt("enum")) {
+  }
+  else if (LookingAt("enum")) {
     LocationRecorder location(root_location,
                               FileDescriptorProto::kEnumTypeFieldNumber,
                               file->enum_type_size());
     return ParseEnumDefinition(file->add_enum_type(), location, file);
-  } else if (LookingAt("service")) {
+  }
+  else if (LookingAt("service")) {
     LocationRecorder location(root_location,
                               FileDescriptorProto::kServiceFieldNumber,
                               file->service_size());
     return ParseServiceDefinition(file->add_service(), location, file);
-  } else if (LookingAt("extend")) {
+  }
+  else if (LookingAt("extend")) {
     LocationRecorder location(root_location,
                               FileDescriptorProto::kExtensionFieldNumber);
     return ParseExtend(
         file->mutable_extension(), file->mutable_message_type(), root_location,
         FileDescriptorProto::kMessageTypeFieldNumber, location, file);
-  } else if (LookingAt("import")) {
+  }
+  else if (LookingAt("import")) {
     return ParseImport(file->mutable_dependency(),
                        file->mutable_public_dependency(),
                        file->mutable_weak_dependency(), root_location, file);
-  } else if (LookingAt("package")) {
+  }
+  else if (LookingAt("package")) {
     return ParsePackage(file, root_location, file);
-  } else if (LookingAt("option")) {
+  }
+  else if (LookingAt("option")) {
     LocationRecorder location(root_location,
                               FileDescriptorProto::kOptionsFieldNumber);
     return ParseOption(file->mutable_options(), location, file,
                        OPTION_STATEMENT);
-  } else {
+  }
+  else {
     AddError("Expected top-level statement (e.g. \"message\").");
     return false;
   }
@@ -1419,7 +1378,7 @@ bool Parser::ParseUninterpretedBlock(std::string* value) {
 bool Parser::ParseOption(Message* options,
                          const LocationRecorder& options_location,
                          const FileDescriptorProto* containing_file,
-                         OptionStyle style) {
+                         OptionStyle style=OPTION_STATEMENT) {
   // Create an entry in the uninterpreted_option field.
   const FieldDescriptor* uninterpreted_option_field =
       options->GetDescriptor()->FindFieldByName("uninterpreted_option");
@@ -1432,9 +1391,7 @@ bool Parser::ParseOption(Message* options,
       options_location, uninterpreted_option_field->number(),
       reflection->FieldSize(*options, uninterpreted_option_field));
 
-  if (style == OPTION_STATEMENT) {
-    DO(Consume("option"));
-  }
+  DO(Consume("option"));
 
   UninterpretedOption* uninterpreted_option =
       down_cast<UninterpretedOption*>(options->GetReflection()->AddMessage(

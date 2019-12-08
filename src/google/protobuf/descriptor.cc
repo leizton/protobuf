@@ -3560,9 +3560,8 @@ const FileDescriptor* DescriptorPool::BuildFileFromDatabase(const FileDescriptor
   return DescriptorBuilder(this, tables_.get(), nullptr).BuildFile(proto);
 }
 
-DescriptorBuilder::DescriptorBuilder(
-    const DescriptorPool* pool, DescriptorPool::Tables* tables,
-    DescriptorPool::ErrorCollector* error_collector)
+DescriptorBuilder::DescriptorBuilder(const DescriptorPool* pool, DescriptorPool::Tables* tables,
+                                     DescriptorPool::ErrorCollector* error_collector)
     : pool_(pool),
       tables_(tables),
       error_collector_(error_collector),
@@ -4168,10 +4167,11 @@ static bool ExistingFileMatchesProto(const FileDescriptor* existing_file,
   return existing_proto.SerializeAsString() == proto.SerializeAsString();
 }
 
+// @[02.02]
 const FileDescriptor* DescriptorBuilder::BuildFile(const FileDescriptorProto& proto) {
   filename_ = proto.name();
 
-  // solu proto's dependency
+  // handle proto's dependencies
   tables_->pending_files_.push_back(proto.name());
   for (int i = 0; i < proto.dependency_size(); i++) {
     if (tables_->FindFile(proto.dependency(i)) == nullptr) {

@@ -329,7 +329,8 @@ inline bool Tokenizer::TryConsumeOne() {
 
 inline bool Tokenizer::TryConsume(char c) {
   if (current_char_ == c) {
-    NextChar();
+    previous_char_ = current_char_;
+    NextChar();  // 读下一个字符
     return true;
   } else {
     return false;
@@ -561,91 +562,46 @@ Tokenizer::NextCommentStatus Tokenizer::TryConsumeCommentStart() {
 
 // -------------------------------------------------------------------
 
+// 读入一个token
 bool Tokenizer::Next() {
   previous_ = current_;
 
   while (!read_error_) {
     ConsumeZeroOrMore<Whitespace>();
 
-    switch (TryConsumeCommentStart()) {
-      case LINE_COMMENT:
-        ConsumeLineComment(NULL);
-        continue;
-      case BLOCK_COMMENT:
-        ConsumeBlockComment(NULL);
-        continue;
-      case SLASH_NOT_COMMENT:
-        return true;
-      case NO_COMMENT:
-        break;
+    // 跳过注释
+    NextCommentStatus st = TryConsumeCommentStart();
+    if (st == LINE_COMMENT)
+      ConsumeLineComment(nullptr);
+    else if (st == BLOCK_COMMENT)
+      ConsumeBlockComment(nullptr);
+
+    StartToken();
+
+    if (TryConsumeOne<Letter>()) {
+      ConsumeZeroOrMore<Alphanumeric>();
+      current_.type = TYPE_IDENTIFIER;
     }
-
-    // Check for EOF before continuing.
-    if (read_error_) break;
-
-    if (LookingAt<Unprintable>() || current_char_ == '\0') {
-      AddError("Invalid control characters encountered in text.");
-      NextChar();
-      // Skip more unprintable characters, too.  But, remember that '\0' is
-      // also what current_char_ is set to after EOF / read error.  We have
-      // to be careful not to go into an infinite loop of trying to consume
-      // it, so make sure to check read_error_ explicitly before consuming
-      // '\0'.
-      while (TryConsumeOne<Unprintable>() ||
-             (!read_error_ && TryConsume('\0'))) {
-        // Ignore.
-      }
-
-    } else {
-      // Reading some sort of token.
-      StartToken();
-
-      if (TryConsumeOne<Letter>()) {
-        ConsumeZeroOrMore<Alphanumeric>();
-        current_.type = TYPE_IDENTIFIER;
-      } else if (TryConsume('0')) {
-        current_.type = ConsumeNumber(true, false);
-      } else if (TryConsume('.')) {
-        // This could be the beginning of a floating-point number, or it could
-        // just be a '.' symbol.
-
-        if (TryConsumeOne<Digit>()) {
-          // It's a floating-point number.
-          if (previous_.type == TYPE_IDENTIFIER &&
-              current_.line == previous_.line &&
-              current_.column == previous_.end_column) {
-            // We don't accept syntax like "blah.123".
-            error_collector_->AddError(
-                line_, column_ - 2,
-                "Need space between identifier and decimal point.");
-          }
-          current_.type = ConsumeNumber(false, true);
-        } else {
-          current_.type = TYPE_SYMBOL;
-        }
-      } else if (TryConsumeOne<Digit>()) {
-        current_.type = ConsumeNumber(false, false);
-      } else if (TryConsume('\"')) {
-        ConsumeString('\"');
-        current_.type = TYPE_STRING;
-      } else if (TryConsume('\'')) {
-        ConsumeString('\'');
-        current_.type = TYPE_STRING;
-      } else {
-        // Check if the high order bit is set.
-        if (current_char_ & 0x80) {
-          error_collector_->AddError(
-              line_, column_,
-              StringPrintf("Interpreting non ascii codepoint %d.",
-                           static_cast<unsigned char>(current_char_)));
-        }
-        NextChar();
+    else if (TryConsume('0')) {
+      current_.type = ConsumeNumber(true, false);
+    }
+    else if (TryConsume('.')) {
+      if (TryConsumeOne<Digit>())
+        // It's a floating-point number.
+        current_.type = ConsumeNumber(false, true);
+      else
         current_.type = TYPE_SYMBOL;
-      }
-
-      EndToken();
-      return true;
     }
+    else if (TryConsumeOne<Digit>()) {
+      current_.type = ConsumeNumber(false, false);
+    }
+    else if (TryConsume('\"') || TryConsume('\'')) {
+      ConsumeString(previous_char_);
+      current_.type = TYPE_STRING;
+    }
+
+    EndToken();
+    return true;
   }
 
   // EOF

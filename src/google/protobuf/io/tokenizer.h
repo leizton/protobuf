@@ -126,14 +126,9 @@ class Tokenizer {
   // Structure representing a token read from the token stream.
   struct Token {
     TokenType type;
-    std::string text;  // The exact text of the token as it appeared in
-                       // the input.  e.g. tokens of TYPE_STRING will still
-                       // be escaped and in quotes.
-
-    // "line" and "column" specify the position of the first character of
-    // the token within the input stream.  They are zero-based.
+    std::string text;  // The exact text of the token as it appeared in the input
     int line;
-    ColumnNumber column;
+    ColumnNumber column;  // "line" and "column" specify the position of the first character
     ColumnNumber end_column;
   };
 
