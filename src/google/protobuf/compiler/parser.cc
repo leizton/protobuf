@@ -174,8 +174,9 @@ bool IsNumberFollowUnderscore(const string& name) {
 // returning false.
 #define DO(STATEMENT) \
   if (STATEMENT) {    \
-  } else              \
-    return false
+  } else {            \
+    return false      \
+  }
 
 // ===================================================================
 
@@ -334,11 +335,14 @@ bool Parser::ConsumeString(std::string* output, const char* error) {
   }
 }
 
+// 读至声明的结尾, 即读完注释
 bool Parser::TryConsumeEndOfDeclaration(const char* text,
                                         const LocationRecorder* location) {
   if (LookingAt(text)) {
     std::string leading, trailing;
     std::vector<std::string> detached;
+
+    // 读注释
     input_->NextWithComments(&trailing, &detached, &leading);
 
     // Save the leading comments for next time, and recall the leading comments
@@ -365,6 +369,7 @@ bool Parser::TryConsumeEndOfDeclaration(const char* text,
   }
 }
 
+// 即Consume(text)
 bool Parser::ConsumeEndOfDeclaration(const char* text,
                                      const LocationRecorder* location) {
   if (TryConsumeEndOfDeclaration(text, location)) {
@@ -712,19 +717,7 @@ bool Parser::ParseMessageDefinition(
     DescriptorProto* message, const LocationRecorder& message_location,
     const FileDescriptorProto* containing_file) {
   DO(Consume("message"));
-  {
-    LocationRecorder location(message_location,
-                              DescriptorProto::kNameFieldNumber);
-    location.RecordLegacyLocation(message,
-                                  DescriptorPool::ErrorCollector::NAME);
-    DO(ConsumeIdentifier(message->mutable_name(), "Expected message name."));
-    if (!IsUpperCamelCase(message->name())) {
-      AddWarning(
-          "Message name should be in UpperCamelCase. Found: " +
-          message->name() +
-          ". See https://developers.google.com/protocol-buffers/docs/style");
-    }
-  }
+  DO(ConsumeIdentifier(message->mutable_name(), "Expected message name."));
   DO(ParseMessageBlock(message, message_location, containing_file));
   return true;
 }

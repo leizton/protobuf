@@ -61,6 +61,7 @@ SourceTreeDescriptorDatabase::FindFileByName(string& filename, FileDescriptorPro
   parser.Parse(&tokenizer, output)  // @[02.01.01]
 
 // @[02.01.01]
+// 假设待解析的proto文件是 无注释 无语法错误
 Parser::Parse(Tokenizer* input, FileDescriptorProto* file)
   input_ = input
   SourceCodeInfo source_code_info
@@ -75,17 +76,29 @@ Parser::Parse(Tokenizer* input, FileDescriptorProto* file)
   --
   source_code_info_.Swap(file.mutable_source_code_info)
 ##
+// 检查当前token的text/type
 Parser::LookingAt(string text)
   return input_.current().text == text
+Parser::LookingAtType(Tokenizer::TokenType type)
+  return input_.current().type == type
 ##
 Parser::Consume(string text)
-  // 返回当前token是否是text, 并尝试读入下一个token
+  // 检查token_text, 然后读入下一个token
   if LookingAt(text)
     input_.Next()
     return true
-  return false
+  else
+    return false
+Parser::ConsumeIdentifier(string* out)
+  // 检查token_type
+  if LookingAtType(Tokenizer::TYPE_IDENTIFIER)
+    *out = input_.current().text
+    input_.Next()
+    return true
+  else
+    return false
 ##
-Parser::ParseTopLevelStatement(file, root_loc)
+Parser::ParseTopLevelStatement(FileDescriptorProto* file, root_loc)
   if LookingAt("message") {
     LocationRecorder loc(root_loc, path1=kMessageTypeFieldNumber, path2=file.message_type_size)
       // path2: 第几个message(从0开始)
@@ -95,18 +108,45 @@ Parser::ParseTopLevelStatement(file, root_loc)
       loc.location_.span = [parser_.input_.current.line, parser_.input_.current.column]
     ParseMessageDefinition(file.add_message_type(), loc, file)
   }
-  else if LookingAt("enum")
-    auto loc(root_loc, kEnumTypeFieldNumber, file.enum_type_size)
-    ParseEnumDefinition(file.add_enum_type(), loc, file)
   else if LookingAt("option")
-    auto loc(root_loc, path1=kOptionsFieldNumber)
+    LocationRecorder loc(root_loc, path1=kOptionsFieldNumber)
     ParseOption(file.mutable_options(), loc, file)
+  else if LookingAt("enum")
+    LocationRecorder loc(root_loc, path1=kEnumTypeFieldNumber, path2=file.enum_type_size)
+    ParseEnumDefinition(file.add_enum_type(), loc, file)
   else if LookingAt("import")
     ParseImport(file.mutable_dependency(), file.mutable_public_dependency(),
                 file.mutable_weak_dependency(), root_loc, file)
   else if LookingAt("service")
   else if LookingAt("extend")
   else if LookingAt("package")
+##
+Parser::ParseMessageDefinition(DescriptorProto* message, message_loc, FileDescriptorProto* file)
+  Consume("message")
+  // 解析message名字
+  ConsumeIdentifier(message->mutable_name())
+  // 解析message内容
+  ParseMessageBlock(&)
+    Consume("{")
+    while !LookingAt("}")
+      ParseMessageStatement(&)
+        if LookingAt("message")
+          // 递归解析message
+          ParseMessageDefinition(message.add_nested_type(), message_loc, file)
+        else if LookingAt("option")
+          LocationRecorder loc(root_loc, path1=kOptionsFieldNumber)
+          ParseOption(message.mutable_options(), message_loc, file)
+        else if LookingAt("enum")
+          LocationRecorder loc(message_loc, path1=kEnumTypeFieldNumber, path2=message.enum_type_size)
+          ParseEnumDefinition(message.add_enum_type(), loc, file)
+        else
+          LocationRecorder loc(message_loc, path1=kFieldFieldNumber, path2=message.field_size)
+          ParseMessageField(
+              message.add_field(), message->mutable_nested_type(),
+              message_loc, kNestedTypeFieldNumber, loc, file)
+    Consume("}")
+##
+Parser::ParseOption(Message* options, options_loc, file)
 
 // @[02.02]
 DescriptorBuilder::BuildFile(FileDescriptorProto& proto) FileDescriptor*

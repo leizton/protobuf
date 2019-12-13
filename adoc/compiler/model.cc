@@ -32,34 +32,43 @@ SourceTreeDescriptorDatabase ~> DescriptorDatabase
 TokenType
   // enum TokenType
   TYPE_START, TYPE_END
-  TYPE_IDENTIFIER, TYPE_INTEGER, TYPE_FLOAT, TYPE_STRING, TYPE_SYMBOL
+  TYPE_IDENTIFIER, TYPE_INTEGER,
+  TYPE_FLOAT, TYPE_STRING, TYPE_SYMBOL
 
 Token
-  type TokenType
-  lint, column, end_column int
-  text string  // 整个token文本
+  type                      TokenType
+  lint, column, end_column  int
+  text                      string  // 整个token文本
 
 Tokenizer
-  current_ Token{type=TYPE_START,line=column=end_column=0}
-  previous_ Token
-  input_ ZeroCopyInputStream*
+  current_   Token{type=TYPE_START,line=column=end_column=0}
+  previous_  Token
+  input_     ZeroCopyInputStream*
 
 LocationRecorder
   // wrap Location
-  parser_ Parser*
-  source_code_info_ SourceCodeInfo*
-  location_ SourceCodeInfo::Location*
+  parser_            Parser*
+  source_code_info_  SourceCodeInfo*
+  location_          SourceCodeInfo::Location*
 
-FileDescriptorProto
-  // descriptor.proto
-  message_type DescriptorProto[]
-
-SourceCodeInfo
-  // descriptor.proto
-  location Location[]
-
-Location
-  // descriptor.proto
-  // SourceCodeInfo::Location
-  path int[]
-  span int[]
+descriptor.proto
+  --
+  FileDescriptorProto
+    message_type DescriptorProto[]
+  --
+  DescriptorProto
+    name         string
+    nested_type  DescriptorProto[]
+    options      MessageOptions
+    enum_type    EnumDescriptorProto[]
+    field        FieldDescriptorProto[]
+  --
+  MessageOptions
+  --
+  SourceCodeInfo
+    location  Location[]
+  --
+  Location
+    // SourceCodeInfo::Location
+    path int[]
+    span int[]
