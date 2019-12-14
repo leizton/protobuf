@@ -194,14 +194,8 @@ struct Metadata {
 
 // Abstract interface for protocol messages.
 //
-// See also MessageLite, which contains most every-day operations.  Message
-// adds descriptors and reflection on top of that.
-//
 // The methods of this class that are virtual but not pure-virtual have
-// default implementations based on reflection.  Message classes which are
-// optimized for speed will want to override these with faster implementations,
-// but classes optimized for code size may be happy with keeping them.  See
-// the optimize_for option in descriptor.proto.
+// default implementations based on reflection
 class Message : public MessageLite {
  public:
   inline Message() {}

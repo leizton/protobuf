@@ -1371,13 +1371,8 @@ bool Parser::ParseUninterpretedBlock(std::string* value) {
 bool Parser::ParseOption(Message* options,
                          const LocationRecorder& options_location,
                          const FileDescriptorProto* containing_file,
-                         OptionStyle style=OPTION_STATEMENT) {
-  // Create an entry in the uninterpreted_option field.
-  const FieldDescriptor* uninterpreted_option_field =
-      options->GetDescriptor()->FindFieldByName("uninterpreted_option");
-  GOOGLE_CHECK(uninterpreted_option_field != NULL)
-      << "No field named \"uninterpreted_option\" in the Options proto.";
-
+                         OptionStyle style=OPTION_STATEMENT)
+{
   const Reflection* reflection = options->GetReflection();
 
   LocationRecorder location(
