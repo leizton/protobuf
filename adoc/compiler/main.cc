@@ -38,7 +38,7 @@ DescriptorPool::FindFileByName(string& name) FileDescriptor*
   FileDescriptor* ret = this.FindFileDesc(name)
   if (ret != nullptr) return ret
   --
-  this.BuildFileDesc(name)
+  BuildFileDesc(name)
   return tables_.FindFile(name)
 ##
 DescriptorPool::FindFileDesc(string& name) FileDescriptor*
@@ -101,11 +101,7 @@ Parser::ConsumeIdentifier(string* out)
 Parser::ParseTopLevelStatement(FileDescriptorProto* file, root_loc)
   if LookingAt("message") {
     LocationRecorder loc(root_loc, path1=kMessageTypeFieldNumber, path2=file.message_type_size)
-      // path2: 第几个message(从0开始)
-      loc.parser_ = root_loc.parser_
-      loc.location_ = root_loc.source_code_info_.add_location()
-      loc.location_.path = root_loc.path + [path1, path2]
-      loc.location_.span = [parser_.input_.current.line, parser_.input_.current.column]
+      path2: 第几个message(从0开始)
     ParseMessageDefinition(file.add_message_type(), loc, file)
   }
   else if LookingAt("option")
@@ -147,6 +143,11 @@ Parser::ParseMessageDefinition(DescriptorProto* message, message_loc, FileDescri
     Consume("}")
 ##
 Parser::ParseOption(Message* options, options_loc, file)
+  Consume("option")
+  FieldDescriptor* new_option_field =
+      options.Message::GetDescriptor().Descriptor::FindFieldByName("uninterpreted_option")
+  Reflection* reflect = options.GetReflection()
+  LocationRecorder loc(options_loc)
 
 // @[02.02]
 DescriptorBuilder::BuildFile(FileDescriptorProto& proto) FileDescriptor*

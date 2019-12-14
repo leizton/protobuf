@@ -498,8 +498,7 @@ class FileDescriptorSet :
 };
 // -------------------------------------------------------------------
 
-class FileDescriptorProto :
-    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:google.protobuf.FileDescriptorProto) */ {
+class FileDescriptorProto : public Message {
  public:
   FileDescriptorProto();
   virtual ~FileDescriptorProto();
@@ -3853,8 +3852,7 @@ class FileOptions :
 };
 // -------------------------------------------------------------------
 
-class MessageOptions :
-    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:google.protobuf.MessageOptions) */ {
+class MessageOptions : public Message {
  public:
   MessageOptions();
   virtual ~MessageOptions();

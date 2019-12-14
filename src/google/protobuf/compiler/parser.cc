@@ -1373,6 +1373,9 @@ bool Parser::ParseOption(Message* options,
                          const FileDescriptorProto* containing_file,
                          OptionStyle style=OPTION_STATEMENT)
 {
+  const FieldDescriptor* uninterpreted_option_field =
+      options->GetDescriptor()->FindFieldByName("uninterpreted_option");
+
   const Reflection* reflection = options->GetReflection();
 
   LocationRecorder location(

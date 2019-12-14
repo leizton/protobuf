@@ -929,12 +929,10 @@ inline Symbol FileDescriptorTables::FindNestedSymbol(
   }
 }
 
-inline Symbol FileDescriptorTables::FindNestedSymbolOfType(
-    const void* parent, const std::string& name,
-    const Symbol::Type type) const {
+Symbol FileDescriptorTables::FindNestedSymbolOfType(const void* parent, const std::string& name,
+                                                    const Symbol::Type type) const {
   Symbol result = FindNestedSymbol(parent, name);
-  if (result.type != type) return kNullSymbol;
-  return result;
+  return result.type == type ? result : kNullSymbol;
 }
 
 Symbol DescriptorPool::Tables::FindByNameHelper(const DescriptorPool* pool,
@@ -1605,21 +1603,15 @@ const FieldDescriptor* Descriptor::FindFieldByCamelcaseName(
   }
 }
 
-const FieldDescriptor* Descriptor::FindFieldByName(
-    const std::string& key) const {
-  Symbol result =
-      file()->tables_->FindNestedSymbolOfType(this, key, Symbol::FIELD);
-  if (!result.IsNull() && !result.field_descriptor->is_extension()) {
-    return result.field_descriptor;
-  } else {
+const FieldDescriptor* Descriptor::FindFieldByName(const std::string& key) const {
+  Symbol result = file_->tables_->FindNestedSymbolOfType(this, key, Symbol::FIELD);
+  if (result.IsNull || result.field_descriptor->is_extension())
     return nullptr;
-  }
+  return result.field_descriptor;
 }
 
-const OneofDescriptor* Descriptor::FindOneofByName(
-    const std::string& key) const {
-  Symbol result =
-      file()->tables_->FindNestedSymbolOfType(this, key, Symbol::ONEOF);
+const OneofDescriptor* Descriptor::FindOneofByName(const std::string& key) const {
+  Symbol result = file_->tables_->FindNestedSymbolOfType(this, key, Symbol::ONEOF);
   if (!result.IsNull()) {
     return result.oneof_descriptor;
   } else {
@@ -6017,8 +6009,7 @@ bool DescriptorBuilder::OptionInterpreter::InterpretOptions(
   // and clear them, since we're about to interpret them.
   const FieldDescriptor* uninterpreted_options_field =
       options->GetDescriptor()->FindFieldByName("uninterpreted_option");
-  GOOGLE_CHECK(uninterpreted_options_field != nullptr)
-      << "No field named \"uninterpreted_option\" in the Options proto.";
+  assert(uninterpreted_options_field != nullptr);
   options->GetReflection()->ClearField(options, uninterpreted_options_field);
 
   std::vector<int> src_path = options_to_interpret->element_path;
@@ -6026,10 +6017,8 @@ bool DescriptorBuilder::OptionInterpreter::InterpretOptions(
 
   // Find the uninterpreted_option field in the original options.
   const FieldDescriptor* original_uninterpreted_options_field =
-      original_options->GetDescriptor()->FindFieldByName(
-          "uninterpreted_option");
-  GOOGLE_CHECK(original_uninterpreted_options_field != nullptr)
-      << "No field named \"uninterpreted_option\" in the Options proto.";
+      original_options->GetDescriptor()->FindFieldByName("uninterpreted_option");
+  assert(original_uninterpreted_options_field != nullptr);
 
   const int num_uninterpreted_options =
       original_options->GetReflection()->FieldSize(

@@ -565,6 +565,7 @@ static void InitDefaultsscc_info_UninterpretedOption_NamePart_google_2fprotobuf_
 
 static ::PROTOBUF_NAMESPACE_ID::Metadata file_level_metadata_google_2fprotobuf_2fdescriptor_2eproto[27];
 static const ::PROTOBUF_NAMESPACE_ID::EnumDescriptor* file_level_enum_descriptors_google_2fprotobuf_2fdescriptor_2eproto[6];
+
 static constexpr ::PROTOBUF_NAMESPACE_ID::ServiceDescriptor const** file_level_service_descriptors_google_2fprotobuf_2fdescriptor_2eproto = nullptr;
 
 const ::PROTOBUF_NAMESPACE_ID::uint32 TableStruct_google_2fprotobuf_2fdescriptor_2eproto::offsets[] PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {
@@ -1196,13 +1197,28 @@ static ::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase*const descriptor_table_goo
   &scc_info_UninterpretedOption_google_2fprotobuf_2fdescriptor_2eproto.base,
   &scc_info_UninterpretedOption_NamePart_google_2fprotobuf_2fdescriptor_2eproto.base,
 };
+
 static ::PROTOBUF_NAMESPACE_ID::internal::once_flag descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_once;
+
 static bool descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_initialized = false;
+
 const ::PROTOBUF_NAMESPACE_ID::internal::DescriptorTable descriptor_table_google_2fprotobuf_2fdescriptor_2eproto = {
-  &descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_initialized, descriptor_table_protodef_google_2fprotobuf_2fdescriptor_2eproto, "google/protobuf/descriptor.proto", 6022,
-  &descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_once, descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_sccs, descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_deps, 27, 0,
-  schemas, file_default_instances, TableStruct_google_2fprotobuf_2fdescriptor_2eproto::offsets,
-  file_level_metadata_google_2fprotobuf_2fdescriptor_2eproto, 27, file_level_enum_descriptors_google_2fprotobuf_2fdescriptor_2eproto, file_level_service_descriptors_google_2fprotobuf_2fdescriptor_2eproto,
+  /*  0   */  &descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_initialized,
+  /*  1   */  descriptor_table_protodef_google_2fprotobuf_2fdescriptor_2eproto,
+  /*  2   */  "google/protobuf/descriptor.proto",
+  /*  3   */  6022,
+  /*  4   */  &descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_once,
+  /*  5   */  descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_sccs,
+  /*  6   */  descriptor_table_google_2fprotobuf_2fdescriptor_2eproto_deps,
+  /*  7   */  27,
+  /*  8   */  0,
+  /*  9   */  schemas,
+  /*  10  */  file_default_instances,
+  /*  11  */  TableStruct_google_2fprotobuf_2fdescriptor_2eproto::offsets,
+  /*  12  */  file_level_metadata_google_2fprotobuf_2fdescriptor_2eproto,
+  /*  13  */  27,
+  /*  14  */  file_level_enum_descriptors_google_2fprotobuf_2fdescriptor_2eproto,
+  /*  15  */  file_level_service_descriptors_google_2fprotobuf_2fdescriptor_2eproto,
 };
 
 // Force running AddDescriptors() at dynamic initialization time.
