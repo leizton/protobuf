@@ -43,7 +43,6 @@ descriptor.h {
     full_name_        string
     file_             FileDescriptor*
     containing_type_  FileDescriptor*  // 包含当前descriptor的parent_descriptor
-    options_          MessageOptions*
     fields_           FieldDescriptor*
     enum_types_       EnumDescriptor*
     nested_types_     Descriptor*
@@ -86,12 +85,8 @@ descriptor.proto {
   DescriptorProto
     name         string
     nested_type  DescriptorProto[]
-    options      MessageOptions
     field        FieldDescriptorProto[]
     enum_type    EnumDescriptorProto[]
-  --
-  MessageOptions
-    uninterpreted_option  UninterpretedOption[]
   --
   FieldDescriptorProto
     Type enum {
@@ -105,19 +100,6 @@ descriptor.proto {
     lable      Label
     type       Type
     type_name  string
-    options    FieldOptions
-  --
-  FieldOptions
-    CType enum {
-      STRING=0, CORD, STRING_PIECE
-    }
-    ctype                 CType =STRING
-    packed                bool
-    lazy                  bool =false
-    uninterpreted_option  UninterpretedOption[]
-  --
-  EnumOptions
-    uninterpreted_option  UninterpretedOption[]
 
   --
   SourceCodeInfo

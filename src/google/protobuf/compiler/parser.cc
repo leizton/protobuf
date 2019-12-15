@@ -832,13 +832,6 @@ bool Parser::ParseMessageStatement(DescriptorProto* message,
                               DescriptorProto::kOptionsFieldNumber);
     return ParseOption(message->mutable_options(), location, containing_file,
                        OPTION_STATEMENT);
-  } else if (LookingAt("oneof")) {
-    int oneof_index = message->oneof_decl_size();
-    LocationRecorder oneof_location(
-        message_location, DescriptorProto::kOneofDeclFieldNumber, oneof_index);
-
-    return ParseOneof(message->add_oneof_decl(), message, oneof_index,
-                      oneof_location, message_location, containing_file);
   } else {
     LocationRecorder location(message_location,
                               DescriptorProto::kFieldFieldNumber,
@@ -861,13 +854,6 @@ bool Parser::ParseMessageField(FieldDescriptorProto* field,
     FieldDescriptorProto::Label label;
     if (ParseLabel(&label, containing_file)) {
       field->set_label(label);
-      if (label == FieldDescriptorProto::LABEL_OPTIONAL &&
-          syntax_identifier_ == "proto3") {
-        AddError(
-            "Explicit 'optional' labels are disallowed in the Proto3 syntax. "
-            "To define 'optional' fields in Proto3, simply remove the "
-            "'optional' label, as fields are 'optional' by default.");
-      }
     }
   }
 
@@ -876,81 +862,45 @@ bool Parser::ParseMessageField(FieldDescriptorProto* field,
                                   field_location, containing_file);
 }
 
+bool Parser::ParseLabel(FieldDescriptorProto::Label* label,
+                        const FileDescriptorProto* containing_file) {
+  if (TryConsume("optional")) {
+    *label = FieldDescriptorProto::LABEL_OPTIONAL;
+    return true;
+  } else if (TryConsume("repeated")) {
+    *label = FieldDescriptorProto::LABEL_REPEATED;
+    return true;
+  } else if (TryConsume("required")) {
+    *label = FieldDescriptorProto::LABEL_REQUIRED;
+    return true;
+  }
+  return false;
+}
+
 bool Parser::ParseMessageFieldNoLabel(
     FieldDescriptorProto* field, RepeatedPtrField<DescriptorProto>* messages,
     const LocationRecorder& parent_location,
     int location_field_number_for_nested_type,
     const LocationRecorder& field_location,
-    const FileDescriptorProto* containing_file) {
+    const FileDescriptorProto* containing_file)
+{
   MapField map_field;
+
   // Parse type.
   {
-    LocationRecorder location(field_location);  // add path later
-    location.RecordLegacyLocation(field, DescriptorPool::ErrorCollector::TYPE);
-
-    bool type_parsed = false;
-    FieldDescriptorProto::Type type = FieldDescriptorProto::TYPE_INT32;
-    std::string type_name;
-
-    // Special case map field. We only treat the field as a map field if the
-    // field type name starts with the word "map" with a following "<".
+    LocationRecorder location(field_location, FieldDescriptorProto::kTypeNameFieldNumber);
     if (TryConsume("map")) {
-      if (LookingAt("<")) {
-        map_field.is_map_field = true;
-      } else {
-        // False positive
-        type_parsed = true;
-        type_name = "map";
-      }
-    }
-    if (map_field.is_map_field) {
-      if (field->has_oneof_index()) {
-        AddError("Map fields are not allowed in oneofs.");
-        return false;
-      }
-      if (field->has_label()) {
-        AddError(
-            "Field labels (required/optional/repeated) are not allowed on "
-            "map fields.");
-        return false;
-      }
-      if (field->has_extendee()) {
-        AddError("Map fields are not allowed to be extensions.");
-        return false;
-      }
       field->set_label(FieldDescriptorProto::LABEL_REPEATED);
       DO(Consume("<"));
       DO(ParseType(&map_field.key_type, &map_field.key_type_name));
       DO(Consume(","));
       DO(ParseType(&map_field.value_type, &map_field.value_type_name));
       DO(Consume(">"));
-      // Defer setting of the type name of the map field until the
-      // field name is parsed. Add the source location though.
-      location.AddPath(FieldDescriptorProto::kTypeNameFieldNumber);
     } else {
-      // Handle the case where no explicit label is given for a non-map field.
-      if (!field->has_label() && DefaultToOptionalFields()) {
-        field->set_label(FieldDescriptorProto::LABEL_OPTIONAL);
-      }
-      if (!field->has_label()) {
-        AddError("Expected \"required\", \"optional\", or \"repeated\".");
-        // We can actually reasonably recover here by just assuming the user
-        // forgot the label altogether.
-        field->set_label(FieldDescriptorProto::LABEL_OPTIONAL);
-      }
-
-      // Handle the case where the actual type is a message or enum named "map",
-      // which we already consumed in the code above.
-      if (!type_parsed) {
-        DO(ParseType(&type, &type_name));
-      }
-      if (type_name.empty()) {
-        location.AddPath(FieldDescriptorProto::kTypeFieldNumber);
-        field->set_type(type);
-      } else {
-        location.AddPath(FieldDescriptorProto::kTypeNameFieldNumber);
-        field->set_type_name(type_name);
-      }
+      FieldDescriptorProto::Type type;
+      std::string type_name;
+      DO(ParseType(&type, &type_name));
+      field->set_type_name(type_name);
     }
   }
 
@@ -959,20 +909,7 @@ bool Parser::ParseMessageFieldNoLabel(
   {
     LocationRecorder location(field_location,
                               FieldDescriptorProto::kNameFieldNumber);
-    location.RecordLegacyLocation(field, DescriptorPool::ErrorCollector::NAME);
     DO(ConsumeIdentifier(field->mutable_name(), "Expected field name."));
-
-    if (!IsLowerUnderscore(field->name())) {
-      AddWarning(
-          "Field name should be lowercase. Found: " + field->name() +
-          ". See: https://developers.google.com/protocol-buffers/docs/style");
-    }
-    if (IsNumberFollowUnderscore(field->name())) {
-      AddWarning(
-          "Number should not come right after an underscore. Found: " +
-          field->name() +
-          ". See: https://developers.google.com/protocol-buffers/docs/style");
-    }
   }
   DO(Consume("=", "Missing field number."));
 
@@ -980,8 +917,6 @@ bool Parser::ParseMessageFieldNoLabel(
   {
     LocationRecorder location(field_location,
                               FieldDescriptorProto::kNumberFieldNumber);
-    location.RecordLegacyLocation(field,
-                                  DescriptorPool::ErrorCollector::NUMBER);
     int number;
     DO(ConsumeInteger(&number, "Expected field number."));
     field->set_number(number);
@@ -990,55 +925,9 @@ bool Parser::ParseMessageFieldNoLabel(
   // Parse options.
   DO(ParseFieldOptions(field, field_location, containing_file));
 
-  // Deal with groups.
-  if (field->has_type() && field->type() == FieldDescriptorProto::TYPE_GROUP) {
-    // Awkward:  Since a group declares both a message type and a field, we
-    //   have to create overlapping locations.
-    LocationRecorder group_location(parent_location);
-    group_location.StartAt(field_location);
-    group_location.AddPath(location_field_number_for_nested_type);
-    group_location.AddPath(messages->size());
+  // ignore groups.
 
-    DescriptorProto* group = messages->Add();
-    group->set_name(field->name());
-
-    // Record name location to match the field name's location.
-    {
-      LocationRecorder location(group_location,
-                                DescriptorProto::kNameFieldNumber);
-      location.StartAt(name_token);
-      location.EndAt(name_token);
-      location.RecordLegacyLocation(group,
-                                    DescriptorPool::ErrorCollector::NAME);
-    }
-
-    // The field's type_name also comes from the name.  Confusing!
-    {
-      LocationRecorder location(field_location,
-                                FieldDescriptorProto::kTypeNameFieldNumber);
-      location.StartAt(name_token);
-      location.EndAt(name_token);
-    }
-
-    // As a hack for backwards-compatibility, we force the group name to start
-    // with a capital letter and lower-case the field name.  New code should
-    // not use groups; it should use nested messages.
-    if (group->name()[0] < 'A' || 'Z' < group->name()[0]) {
-      AddError(name_token.line, name_token.column,
-               "Group names must start with a capital letter.");
-    }
-    LowerString(field->mutable_name());
-
-    field->set_type_name(group->name());
-    if (LookingAt("{")) {
-      DO(ParseMessageBlock(group, group_location, containing_file));
-    } else {
-      AddError("Missing group body.");
-      return false;
-    }
-  } else {
-    DO(ConsumeEndOfDeclaration(";", &field_location));
-  }
+  DO(ConsumeEndOfDeclaration(";", &field_location));
 
   // Create a map entry type if this is a map field.
   if (map_field.is_map_field) {
@@ -1074,10 +963,7 @@ void Parser::GenerateMapEntry(const MapField& map_field,
   } else {
     value_field->set_type_name(map_field.value_type_name);
   }
-  // Propagate the "enforce_utf8" option to key and value fields if they
-  // are strings. This helps simplify the implementation of code generators
-  // and also reflection-based parsing code.
-  //
+
   // The following definition:
   //   message Foo {
   //     map<string, string> value = 1 [enforce_utf8 = false];
@@ -1091,9 +977,7 @@ void Parser::GenerateMapEntry(const MapField& map_field,
   //     }
   //     repeated ValueEntry value = 1 [enforce_utf8 = false];
   //  }
-  //
-  // TODO(xiaofeng): Remove this when the "enforce_utf8" option is removed
-  // from protocol compiler.
+
   for (int i = 0; i < field->options().uninterpreted_option_size(); ++i) {
     const UninterpretedOption& option =
         field->options().uninterpreted_option(i);
@@ -1101,12 +985,10 @@ void Parser::GenerateMapEntry(const MapField& map_field,
         option.name(0).name_part() == "enforce_utf8" &&
         !option.name(0).is_extension()) {
       if (key_field->type() == FieldDescriptorProto::TYPE_STRING) {
-        key_field->mutable_options()->add_uninterpreted_option()->CopyFrom(
-            option);
+        key_field->mutable_options()->add_uninterpreted_option()->CopyFrom(option);
       }
       if (value_field->type() == FieldDescriptorProto::TYPE_STRING) {
-        value_field->mutable_options()->add_uninterpreted_option()->CopyFrom(
-            option);
+        value_field->mutable_options()->add_uninterpreted_option()->CopyFrom(option);
       }
     }
   }
@@ -1154,20 +1036,9 @@ bool Parser::ParseDefaultAssignment(
 
   LocationRecorder location(field_location,
                             FieldDescriptorProto::kDefaultValueFieldNumber);
-  location.RecordLegacyLocation(field,
-                                DescriptorPool::ErrorCollector::DEFAULT_VALUE);
   std::string* default_value = field->mutable_default_value();
 
   if (!field->has_type()) {
-    // The field has a type name, but we don't know if it is a message or an
-    // enum yet. (If it were a primitive type, |field| would have a type set
-    // already.) In this case, simply take the current string as the default
-    // value; we will catch the error later if it is not a valid enum value.
-    // (N.B. that we do not check whether the current token is an identifier:
-    // doing so throws strange errors when the user mistypes a primitive
-    // typename and we assume it's an enum. E.g.: "optional int foo = 1 [default
-    // = 42]". In such a case the fundamental error is really that "int" is not
-    // a type, not that "42" is not an identifier. See b/12533582.)
     *default_value = input_->current().text;
     input_->Next();
     return true;
@@ -1392,8 +1263,6 @@ bool Parser::ParseOption(Message* options,
   {
     LocationRecorder name_location(location,
                                    UninterpretedOption::kNameFieldNumber);
-    name_location.RecordLegacyLocation(
-        uninterpreted_option, DescriptorPool::ErrorCollector::OPTION_NAME);
 
     {
       LocationRecorder part_location(name_location,
@@ -1415,8 +1284,6 @@ bool Parser::ParseOption(Message* options,
 
   {
     LocationRecorder value_location(location);
-    value_location.RecordLegacyLocation(
-        uninterpreted_option, DescriptorPool::ErrorCollector::OPTION_VALUE);
 
     // All values are a single token, except for negative numbers, which consist
     // of a single '-' symbol, followed by a positive number.
@@ -1446,8 +1313,7 @@ bool Parser::ParseOption(Message* options,
 
       case io::Tokenizer::TYPE_INTEGER: {
         uint64 value;
-        uint64 max_value =
-            is_negative ? static_cast<uint64>(kint64max) + 1 : kuint64max;
+        uint64 max_value = is_negative ? static_cast<uint64>(kint64max) + 1 : kuint64max;
         DO(ConsumeInteger64(max_value, &value, "Expected integer."));
         if (is_negative) {
           value_location.AddPath(
@@ -1815,70 +1681,6 @@ bool Parser::ParseExtend(RepeatedPtrField<FieldDescriptorProto>* extensions,
   return true;
 }
 
-bool Parser::ParseOneof(OneofDescriptorProto* oneof_decl,
-                        DescriptorProto* containing_type, int oneof_index,
-                        const LocationRecorder& oneof_location,
-                        const LocationRecorder& containing_type_location,
-                        const FileDescriptorProto* containing_file) {
-  DO(Consume("oneof"));
-
-  {
-    LocationRecorder name_location(oneof_location,
-                                   OneofDescriptorProto::kNameFieldNumber);
-    DO(ConsumeIdentifier(oneof_decl->mutable_name(), "Expected oneof name."));
-  }
-
-  DO(ConsumeEndOfDeclaration("{", &oneof_location));
-
-  do {
-    if (AtEnd()) {
-      AddError("Reached end of input in oneof definition (missing '}').");
-      return false;
-    }
-
-    if (LookingAt("option")) {
-      LocationRecorder option_location(
-          oneof_location, OneofDescriptorProto::kOptionsFieldNumber);
-      if (!ParseOption(oneof_decl->mutable_options(), option_location,
-                       containing_file, OPTION_STATEMENT)) {
-        return false;
-      }
-      continue;
-    }
-
-    // Print a nice error if the user accidentally tries to place a label
-    // on an individual member of a oneof.
-    if (LookingAt("required") || LookingAt("optional") ||
-        LookingAt("repeated")) {
-      AddError(
-          "Fields in oneofs must not have labels (required / optional "
-          "/ repeated).");
-      // We can continue parsing here because we understand what the user
-      // meant.  The error report will still make parsing fail overall.
-      input_->Next();
-    }
-
-    LocationRecorder field_location(containing_type_location,
-                                    DescriptorProto::kFieldFieldNumber,
-                                    containing_type->field_size());
-
-    FieldDescriptorProto* field = containing_type->add_field();
-    field->set_label(FieldDescriptorProto::LABEL_OPTIONAL);
-    field->set_oneof_index(oneof_index);
-
-    if (!ParseMessageFieldNoLabel(field, containing_type->mutable_nested_type(),
-                                  containing_type_location,
-                                  DescriptorProto::kNestedTypeFieldNumber,
-                                  field_location, containing_file)) {
-      // This statement failed to parse.  Skip it, but keep looping to parse
-      // other statements.
-      SkipStatement();
-    }
-  } while (!TryConsumeEndOfDeclaration("}", NULL));
-
-  return true;
-}
-
 // -------------------------------------------------------------------
 // Enums
 
@@ -2154,21 +1956,6 @@ bool Parser::ParseMethodOptions(const LocationRecorder& parent_location,
 }
 
 // -------------------------------------------------------------------
-
-bool Parser::ParseLabel(FieldDescriptorProto::Label* label,
-                        const FileDescriptorProto* containing_file) {
-  if (TryConsume("optional")) {
-    *label = FieldDescriptorProto::LABEL_OPTIONAL;
-    return true;
-  } else if (TryConsume("repeated")) {
-    *label = FieldDescriptorProto::LABEL_REPEATED;
-    return true;
-  } else if (TryConsume("required")) {
-    *label = FieldDescriptorProto::LABEL_REQUIRED;
-    return true;
-  }
-  return false;
-}
 
 bool Parser::ParseType(FieldDescriptorProto::Type* type,
                        std::string* type_name) {

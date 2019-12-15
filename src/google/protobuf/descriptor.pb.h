@@ -5461,8 +5461,7 @@ class UninterpretedOption_NamePart :
 };
 // -------------------------------------------------------------------
 
-class UninterpretedOption :
-    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:google.protobuf.UninterpretedOption) */ {
+class UninterpretedOption : public Message {
  public:
   UninterpretedOption();
   virtual ~UninterpretedOption();
