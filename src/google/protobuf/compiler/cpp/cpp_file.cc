@@ -280,48 +280,11 @@ void FileGenerator::GenerateProtoHeader(io::Printer* printer,
   GenerateBottomHeaderGuard(printer, false);
 }
 
-void FileGenerator::GeneratePBHeader(io::Printer* printer,
-                                     const std::string& info_path) {
-  Formatter format(printer, variables_);
+// @[code_gen.cc:01.01.01]
+void FileGenerator::GeneratePBHeader(io::Printer* printer, const std::string& info_path="") {
   GenerateTopHeaderGuard(printer, true);
-
-  if (options_.proto_h) {
-    std::string target_basename = StripProto(file_->name());
-    if (!options_.opensource_runtime) {
-      GetBootstrapBasename(options_, target_basename, &target_basename);
-    }
-    format("#include \"$1$.proto.h\"  // IWYU pragma: export\n",
-           target_basename);
-  } else {
-    GenerateLibraryIncludes(printer);
-  }
-
-  if (options_.transitive_pb_h) {
-    GenerateDependencyIncludes(printer);
-  }
-
-  // This is unfortunately necessary for some plugins. I don't see why we
-  // need two of the same insertion points.
-  // TODO(gerbens) remove this.
-  format("// @@protoc_insertion_point(includes)\n");
-
-  GenerateMetadataPragma(printer, info_path);
-
-  if (!options_.proto_h) {
-    GenerateHeader(printer);
-  } else {
-    {
-      NamespaceOpener ns(Namespace(file_, options_), format);
-      format(
-          "\n"
-          "// @@protoc_insertion_point(namespace_scope)\n");
-    }
-    format(
-        "\n"
-        "// @@protoc_insertion_point(global_scope)\n"
-        "\n");
-  }
-
+  GenerateLibraryIncludes(printer);
+  GenerateHeader(printer);
   GenerateBottomHeaderGuard(printer, true);
 }
 
@@ -626,6 +589,7 @@ void FileGenerator::GenerateGlobalSource(io::Printer* printer) {
   }
 }
 
+// @[code_gen.cc:01.01.02]
 void FileGenerator::GenerateSource(io::Printer* printer) {
   Formatter format(printer, variables_);
   GenerateSourceIncludes(printer);
@@ -635,14 +599,9 @@ void FileGenerator::GenerateSource(io::Printer* printer) {
 
   {
     NamespaceOpener ns(Namespace(file_, options_), format);
-
     // Define default instances
     for (int i = 0; i < message_generators_.size(); i++) {
       GenerateSourceDefaultInstance(i, printer);
-      if (options_.lite_implicit_weak_fields) {
-        format("void $1$_ReferenceStrong() {}\n",
-               message_generators_[i]->classname_);
-      }
     }
   }
 
@@ -693,10 +652,6 @@ void FileGenerator::GenerateSource(io::Printer* printer) {
     for (int i = 0; i < extension_generators_.size(); i++) {
       extension_generators_[i]->GenerateDefinition(printer);
     }
-
-    format(
-        "\n"
-        "// @@protoc_insertion_point(namespace_scope)\n");
   }
 
   {
@@ -705,10 +660,6 @@ void FileGenerator::GenerateSource(io::Printer* printer) {
       message_generators_[i]->GenerateSourceInProto2Namespace(printer);
     }
   }
-
-  format(
-      "\n"
-      "// @@protoc_insertion_point(global_scope)\n");
 
   IncludeFile("net/proto2/public/port_undef.inc", printer);
 }
