@@ -53,7 +53,8 @@ descriptor.h {
   --
   FileDescriptor
     // proto文件的描述体
-    tables_  FileDescriptorTables*
+    tables_            FileDescriptorTables*
+    source_code_info_  SourceCodeInfo
   --
   FileDescriptorTables
 

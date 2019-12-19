@@ -1,29 +1,45 @@
-##
-// 检查当前token的text/type
-Parser::LookingAt(string text)
+Parser::LookingAt(string text) {
+  // 检查当前token的text/type
   return input_.current().text == text
-Parser::LookingAtType(Tokenizer::TokenType type)
+}
+
+Parser::LookingAtType(Tokenizer::TokenType type) {
   return input_.current().type == type
-##
-Parser::Consume(string text)
+}
+
+Parser::Consume(string text) {
   // 检查token_text, 然后读入下一个token
-  if LookingAt(text)
-    input_.Next()
-    return true
-  else
-    return false
-Parser::ConsumeIdentifier() string
+  assert(LookingAt(text))
+  input_.Next()
+}
+
+Parser::ConsumeIdentifier():string {
   // 检查token_type
-  if LookingAtType(Tokenizer::TYPE_IDENTIFIER)
-    string ret = input_.current().text
-    input_.Next()
-    return ret
-  else
-    throw exception
+  assert(LookingAtType(Tokenizer::TYPE_IDENTIFIER))
+  string id = input_.current().text
+  input_.Next()
+  return id
+}
 
+// @[parser.cc:01]
+// 假设待解析的proto文件是 无注释 无语法错误
+Parser::Parse(Tokenizer* input, FileDescriptorProto* file) {
+  input_ = input
+  SourceCodeInfo source_code_info
+  source_code_info_ = &source_code_info
+  LocationRecorder root_loc(parser=this)
+  --
+  ParseSyntaxIdentifier(root_loc)
+  file->set_syntax(syntax_identifier_)  // syntax_identifier_=="proto3"
+  --
+  while input_.current().type != TYPE_END
+    ParseTopLevelStatement(file, root_loc)  // @[parser.cc:01.01]
+  --
+  source_code_info_.Swap(file.mutable_source_code_info)
+}
 
-// @[02.01.01.01]
-Parser::ParseTopLevelStatement(FileDescriptorProto* file, root_loc)
+// @[parser.cc:01.01]
+Parser::ParseTopLevelStatement(FileDescriptorProto* file, root_loc) {
   if LookingAt("message") {
     LocationRecorder loc(root_loc, path1=kMessageTypeFieldNumber, path2=file.message_type_size)
       path2: 第几个message(从0开始)
@@ -41,12 +57,12 @@ Parser::ParseTopLevelStatement(FileDescriptorProto* file, root_loc)
   else if LookingAt("service")
   else if LookingAt("extend")
   else if LookingAt("package")
-##
-Parser::ParseMessageDefinition(DescriptorProto* message, message_loc, FileDescriptorProto* file)
+}
+
+Parser::ParseMessageDefinition(DescriptorProto* message, message_loc, FileDescriptorProto* file) {
   Consume("message")
   // 解析message名字
   message->mutable_name() = ConsumeIdentifier()
-  ConsumeIdentifier(message->mutable_name())
   // 解析message内容
   ParseMessageBlock(&)
     Consume("{")
@@ -71,9 +87,9 @@ Parser::ParseMessageDefinition(DescriptorProto* message, message_loc, FileDescri
           ParseMessageField(message.add_field(), message->mutable_nested_type(),
                             message_loc, kNestedTypeFieldNumber, field_loc, file)
     Consume("}")
-##
-Parser::ParseMessageField(FieldDescriptorProto* field, RepeatedPtrField<DescriptorProto>* messages,
-                          message_loc, kNestedTypeFieldNumber, field_loc, file) {
+}
+
+Parser::ParseMessageField(FieldDescriptorProto* field, RepeatedPtrField<DescriptorProto>* messages, message_loc, kNestedTypeFieldNumber, field_loc, file) {
   // label
   LocationRecorder label_loc(field_loc, path1=kLabelFieldNumber)
   FieldDescriptorProto::Label label = {
@@ -82,8 +98,8 @@ Parser::ParseMessageField(FieldDescriptorProto* field, RepeatedPtrField<Descript
     TryConsume("required") => LABEL_REQUIRED
   }
   field.set_label(label)
+  --
   // @ref Parser::ParseMessageFieldNoLabel()
-  // type
   MapField map_field
   auto type_loc(field_loc, path1=kTypeNameFieldNumber)
   if TryConsume("map")
@@ -114,13 +130,12 @@ Parser::ParseMessageField(FieldDescriptorProto* field, RepeatedPtrField<Descript
   if map_field.is_map_field
     GenerateMapEntry(map_field, field, messages)
 }
-##
-Parser::GenerateMapEntry
-  /*
+
+Parser::GenerateMapEntry() {
   message Foo {
     map<string,string> boo = 1;
   }
-  wile be interpreted as:
+  // wile be interpreted as:
   message Foo {
     message BooEntry {
       option map_entry = true;
@@ -129,4 +144,4 @@ Parser::GenerateMapEntry
     }
     repeated BooEntry boo = 1;
   }
-  */
+}

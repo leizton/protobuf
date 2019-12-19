@@ -816,48 +816,23 @@ int CommandLineInterface::Run(int argc, const char* const argv[]) {
   // they should share a single GeneratorContext so that OpenForInsert() works.
   GeneratorContextMap output_directories;
 
-  // Generate output.
-  if (mode_ == MODE_COMPILE) {
-    for (int i = 0; i < output_directives_.size(); i++) {
-      std::string output_location = output_directives_[i].output_location;
-      if (!HasSuffixString(output_location, ".zip") &&
-          !HasSuffixString(output_location, ".jar")) {
-        AddTrailingSlash(&output_location);
-      }
-      GeneratorContextImpl** map_slot = &output_directories[output_location];
+  for (int i = 0; i < output_directives_.size(); i++) {
+    std::string output_location = output_directives_[i].output_location;
+    AddTrailingSlash(&output_location);
+    GeneratorContextImpl** map_slot = &output_directories[output_location];
 
-      if (*map_slot == NULL) {
-        // First time we've seen this output location.
-        *map_slot = new GeneratorContextImpl(parsed_files);
-      }
-
-      if (!GenerateOutput(parsed_files, output_directives_[i], *map_slot)) {
-        STLDeleteValues(&output_directories);
-        return 1;
-      }
+    if (*map_slot == NULL) {
+      *map_slot = new GeneratorContextImpl(parsed_files);
     }
+
+    GenerateOutput(parsed_files, output_directives_[i], *map_slot);
   }
 
   // Write all output to disk.
-  for (GeneratorContextMap::iterator iter = output_directories.begin();
-       iter != output_directories.end(); ++iter) {
-    const std::string& location = iter->first;
-    GeneratorContextImpl* directory = iter->second;
-    if (HasSuffixString(location, "/")) {
-      if (!directory->WriteAllToDisk(location)) {
-        STLDeleteValues(&output_directories);
-        return 1;
-      }
-    } else {
-      if (HasSuffixString(location, ".jar")) {
-        directory->AddJarManifest();
-      }
-
-      if (!directory->WriteAllToZip(location)) {
-        STLDeleteValues(&output_directories);
-        return 1;
-      }
-    }
+  for (auto& e : output_directories) {
+    const std::string& location = e.first;
+    GeneratorContextImpl* directory = e.second;
+    directory->WriteAllToDisk(location);
   }
 
   if (!dependency_out_name_.empty()) {
@@ -1132,6 +1107,13 @@ CommandLineInterface::ParseArgumentStatus CommandLineInterface::InterpretArgumen
 {
   if (name.empty()) {
     input_files_.push_back(value);
+  } else {
+    GeneratorInfo* generator_info = FindOrNull(generators_by_flag_name_, name);
+    OutputDirective dir;
+    dir.name = name;
+    dir.generator = generator_info->generator;
+    dir.output_location = value;
+    output_directives_.push_back(dir);
   }
   return PARSE_ARGUMENT_DONE_AND_CONTINUE;
 }
@@ -1297,45 +1279,9 @@ void CommandLineInterface::PrintHelpText() {
 bool CommandLineInterface::GenerateOutput(
     const std::vector<const FileDescriptor*>& parsed_files,
     const OutputDirective& output_directive,
-    GeneratorContext* generator_context) {
-  // Call the generator.
-  std::string error;
-  if (output_directive.generator == NULL) {
-    // This is a plugin.
-    GOOGLE_CHECK(HasPrefixString(output_directive.name, "--") &&
-          HasSuffixString(output_directive.name, "_out"))
-        << "Bad name for plugin generator: " << output_directive.name;
-
-    std::string plugin_name = PluginName(plugin_prefix_, output_directive.name);
-    std::string parameters = output_directive.parameter;
-    if (!plugin_parameters_[plugin_name].empty()) {
-      if (!parameters.empty()) {
-        parameters.append(",");
-      }
-      parameters.append(plugin_parameters_[plugin_name]);
-    }
-    if (!GeneratePluginOutput(parsed_files, plugin_name, parameters,
-                              generator_context, &error)) {
-      std::cerr << output_directive.name << ": " << error << std::endl;
-      return false;
-    }
-  } else {
-    // Regular generator.
-    std::string parameters = output_directive.parameter;
-    if (!generator_parameters_[output_directive.name].empty()) {
-      if (!parameters.empty()) {
-        parameters.append(",");
-      }
-      parameters.append(generator_parameters_[output_directive.name]);
-    }
-    if (!output_directive.generator->GenerateAll(parsed_files, parameters,
-                                                 generator_context, &error)) {
-      // Generator returned an error.
-      std::cerr << output_directive.name << ": " << error << std::endl;
-      return false;
-    }
-  }
-
+    GeneratorContext* generator_context)
+{
+  output_directive.generator->GenerateAll(parsed_files, "", generator_context, nullptr);
   return true;
 }
 

@@ -1,90 +1,94 @@
-// @[01]
-Run(int argc, const char* const argv[])
-  ParseArguments(argc, argv)
+// @[main.cc:01]
+CommandLineInterface::Run(int argc, const char* const argv[]) {
+  // 解析参数
+  ParseArguments(argc, argv)  // @[main.cc:01.01]
   --
+  // 构造 source_tree_database 用于查找依赖的其他proto文件
   auto disk_source_tree = std::make_unique<DiskSourceTree>()  // c++14
   InitializeDiskSourceTree(disk_source_tree, nullptr)
-  --
+    for string& e : proto_path_
+      disk_source_tree.MapPath(e.first, e.second)
   auto source_tree_database = make_unique<SourceTreeDescriptorDatabase>(disk_source_tree, nullptr)
   auto descriptor_pool = make_unique<DescriptorPool>(fallback_database=source_tree_database)
-  descriptor_pool.enforce_weak_ = true
   --
+  // 把 input_files_ 解析成 FileDescriptor
   vector<FileDescriptor*> parsed_files
-  ParseInputFiles(descriptor_pool, &parsed_files)  // 把 input_files_ 解析成 FileDescriptor
+  ParseInputFiles(descriptor_pool, &parsed_files)  // @[main.cc:01.02]
+  --
+  OutputDirective& out_dir = output_directives_[0]
+  auto* gen_ctx = new GeneratorContextImpl(parsed_files)
+  GenerateOutput(parsed_files, out_dir, gen_ctx)
+    // @[code_gen.cc:01]
+    out_dir.generator.GenerateAll(parsed_files, "", gen_ctx)
+  // 写磁盘文件
+  gen_ctx.WriteAllToDisk(out_dir.output_location)
+}
 
-// @[01.01]
-ParseArguments(int argc, const char* const argv[]) ParseArgumentStatus
+// @[main.cc:01.01]
+CommandLineInterface::ParseArguments(int argc, const char* const argv[]):ParseArgumentStatus {
+  // protoc --cpp_out=. ./proto/hello.proto
   executable_name_ = argv[0]
-  argv[1:argc] 的格式是 "value" 或 "--name=value"
-  input_files_.push_back(格式是"value"的argv)
+  for arg : argv[1:argc]
+    // arg 的格式是 "--name=value" 或 "value"
+    name, value = ParseArgument(arg)
+    //
+    InterpretArgument(name, value)
+      if name.empty()
+        input_files_.push_back(value)
+      else
+        assert(name, "cpp_out")
+        // generators_by_flag_name_: map<string,GeneratorInfo>
+        CppGenerator* generator = dynamic_cast<CppGenerator*>(generators_by_flag_name_[name].generator)
+        output_directives_.push_back(OutputDirective{
+          name:name, generator:generator, output_location:value, parameter:"",
+        })
   proto_path_.push_back(pair<string,string>("", "."))
+}
 
-// @[01.02]
-InitializeDiskSourceTree(DiskSourceTree* source_tree, DescriptorDatabase* fallback_database=nullptr)
-  for string& e : proto_path_
-    source_tree.MapPath(e.first, e.second)
-
-// @[01.03]
-ParseInputFiles(DescriptorPool* descriptor_pool, vector<FileDescriptor*>* parsed_files)
+// @[main.cc:01.02]
+CommandLineInterface::ParseInputFiles(DescriptorPool* descriptor_pool, vector<FileDescriptor*>* parsed_files) {
   for string& input_file : input_files_
     descriptor_pool.unused_import_track_files_.insert(input_file)
-    FileDescriptor* parsed_file = descriptor_pool.FindFileByName(input_file)  // @[02]
+    FileDescriptor* parsed_file = descriptor_pool.FindFileByName(input_file)  // @[main.cc:01.02.01]
     descriptor_pool.unused_import_track_files_.clear()
     parsed_files.push_back(parsed_file)
+}
 
-
-// @[02]
-DescriptorPool::FindFileByName(string& name) FileDescriptor*
+// @[main.cc:01.02.01]
+DescriptorPool::FindFileByName(string& name):FileDescriptor* {
   FileDescriptor* ret = this.FindFileDesc(name)
+    return tables_.files_by_name_.getOrDefault(name, nullptr)
   if (ret != nullptr) return ret
   --
-  BuildFileDesc(name)
+  TryFindFileInFallbackDatabase(name)
+    FileDescriptorProto file_proto
+    fallback_database_.FindFileByName(name, &file_proto)  // @[main.cc:01.02.01.01]
+    --
+    // 把 file_proto 转化成 FileDescriptor*, 并存到 tables_ 里
+    BuildFileFromDatabase(file_proto) // descriptor.cc
+      DescriptorBuilder b(this, tables_, nullptr)
+      b.BuildFile(file_proto)  // @[main.cc:01.02.01.02], tables_.AddFile
   return tables_.FindFile(name)
-##
-DescriptorPool::FindFileDesc(string& name) FileDescriptor*
-  return tables_.files_by_name_.getOrDefault(name, nullptr)
-##
-DescriptorPool::BuildFileDesc(string& name)
-  FileDescriptorProto file_proto
-  fallback_database_.FindFileByName(name, &file_proto)  // @[02.01]
-  BuildFileFromDatabase(file_proto)
-    // descriptor.cc
-    DescriptorBuilder b(this, tables_, nullptr)
-    b.BuildFile(file_proto)  // @[02.02]
+}
 
-// @[02.01]
-SourceTreeDescriptorDatabase::FindFileByName(string& filename, FileDescriptorProto* output)
+// @[main.cc:01.02.01.01]
+SourceTreeDescriptorDatabase::FindFileByName(string& filename, FileDescriptorProto* output) {
   output.set_name(filename)
   auto input = make_unique<ZeroCopyInputStream>(source_tree_.Open(filename))
   Tokenizer tokenizer(input, nullptr)
   Parser parser
-  parser.Parse(&tokenizer, output)  // @[02.01.01]
+  parser.Parse(&tokenizer, output)  // @[parser.cc:01]
+}
 
-// @[02.01.01]
-// 假设待解析的proto文件是 无注释 无语法错误
-Parser::Parse(Tokenizer* input, FileDescriptorProto* file)
-  input_ = input
-  SourceCodeInfo source_code_info
-  source_code_info_ = &source_code_info
-  LocationRecorder root_loc(parser=this)
-  --
-  ParseSyntaxIdentifier(root_loc)
-  file->set_syntax(syntax_identifier_)  // syntax_identifier_=="proto3"
-  --
-  while input_.current().type != TYPE_END
-    ParseTopLevelStatement(file, root_loc)  // @[02.01.01.01]
-  --
-  source_code_info_.Swap(file.mutable_source_code_info)
-
-// @[02.02]
-DescriptorBuilder::BuildFile(FileDescriptorProto& proto) FileDescriptor*
-  // handle proto's dependencies
-  tables_.pending_files_.push_back(proto.name)
-  for i = [0, proto.dependency_size)
-    string& dep_name = proto.dependency(i)
-    if pool_.FindFileDesc(dep_name) == nullptr
-      pool_.BuildFileDesc(dep_name)
-  tables_.pending_files_.pop_back()
-  --
-  auto* ret = tables_.Allocate<FileDescriptor>()
-  ret.syntax_ = FileDescriptor::SYNTAX_PROTO3
+// @[main.cc:01.02.01.02]
+DescriptorBuilder::BuildFile(FileDescriptorProto& proto):FileDescriptor* {
+  return BuildFileImpl(proto)
+    auto* ret = new FileDescriptor
+    ret.source_code_info_ = new SourceCodeInfo(proto.source_code_info)
+    ret.tables_ = file_tables_ = new FileDescriptorTables*
+    ret.name_ = proto.name
+    ret.package_ = proto.package
+    copy message_type/enum_type from proto to ret
+    tables_.AddFile(ret)
+    return ret
+}
