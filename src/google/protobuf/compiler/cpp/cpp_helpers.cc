@@ -339,16 +339,11 @@ std::string Namespace(const std::string& package) {
 }
 
 std::string Namespace(const FileDescriptor* d, const Options& options) {
-  std::string ret = Namespace(d->package());
-  if (IsWellKnownMessage(d) && options.opensource_runtime) {
-    // Written with string concatenation to prevent rewriting of
-    // ::google::protobuf.
-    ret = StringReplace(ret,
-                        "::google::"
-                        "protobuf",
-                        "PROTOBUF_NAMESPACE_ID", false);
-  }
-  return ret;
+  return "::" + d->package();
+}
+
+std::string Namespace(const FileDescriptor* d) {
+  return "::" + d->package();
 }
 
 std::string Namespace(const Descriptor* d, const Options& options) {

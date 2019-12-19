@@ -14,3 +14,8 @@ bool GetRuntimeAbsolutePath(std::string& path) {
   path = path.substr(0, pos);
   return true;
 }
+
+#define RCAST reinterpret_cast
+#define RCAST_CCH RCAST<char*>
+#define PROTOBUF_FIELD_OFFSET(TYPE, FIELD)\
+  static_cast<int>(RCAST_CCH(&RCAST<TYPE*>(16)->FIELD) - RCAST_CCH(16))

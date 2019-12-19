@@ -91,6 +91,7 @@ std::vector<const T*> Sorted(const std::unordered_set<const T*>& vals) {
 
 }  // namespace
 
+// @[code_gen.cc:01.01.01]
 FileGenerator::FileGenerator(const FileDescriptor* file, const Options& options)
     : file_(file), options_(options), scc_analyzer_(options) {
   // These variables are the same on a file level
@@ -280,7 +281,7 @@ void FileGenerator::GenerateProtoHeader(io::Printer* printer,
   GenerateBottomHeaderGuard(printer, false);
 }
 
-// @[code_gen.cc:01.01.01]
+// @[code_gen.cc:01.01.02]
 void FileGenerator::GeneratePBHeader(io::Printer* printer, const std::string& info_path="") {
   GenerateTopHeaderGuard(printer, true);
   GenerateLibraryIncludes(printer);
@@ -398,7 +399,6 @@ void FileGenerator::GenerateSourceIncludes(io::Printer* printer) {
     }
   }
 
-  format("// @@protoc_insertion_point(includes)\n");
   IncludeFile("net/proto2/public/port_def.inc", printer);
 }
 
@@ -589,39 +589,30 @@ void FileGenerator::GenerateGlobalSource(io::Printer* printer) {
   }
 }
 
-// @[code_gen.cc:01.01.02]
+// @[code_gen.cc:01.01.03]
 void FileGenerator::GenerateSource(io::Printer* printer) {
   Formatter format(printer, variables_);
   GenerateSourceIncludes(printer);
-  CrossFileReferences refs;
-  GetCrossFileReferencesForFile(file_, &refs);
-  GenerateInternalForwardDeclarations(refs, printer);
 
+  // Define default instances
   {
-    NamespaceOpener ns(Namespace(file_, options_), format);
-    // Define default instances
+    NamespaceOpener ns(Namespace(file_), format);
     for (int i = 0; i < message_generators_.size(); i++) {
       GenerateSourceDefaultInstance(i, printer);
     }
   }
 
   {
-    GenerateTables(printer);
-
     // Now generate the InitDefaults for each SCC.
     for (auto scc : sccs_) {
       GenerateInitForSCC(scc, printer);
     }
 
-    if (HasDescriptorMethods(file_, options_)) {
-      // Define the code to initialize reflection. This code uses a global
-      // constructor to register reflection data with the runtime pre-main.
-      GenerateReflectionInitializationCode(printer);
-    }
+    GenerateReflectionInitializationCode(printer);
   }
 
   {
-    NamespaceOpener ns(Namespace(file_, options_), format);
+    NamespaceOpener ns(Namespace(file_), format);
 
     // Actually implement the protos
 
@@ -667,44 +658,20 @@ void FileGenerator::GenerateSource(io::Printer* printer) {
 void FileGenerator::GenerateReflectionInitializationCode(io::Printer* printer) {
   Formatter format(printer, variables_);
 
-  if (!message_generators_.empty()) {
-    format("static ::$proto_ns$::Metadata $file_level_metadata$[$1$];\n",
-           message_generators_.size());
-  } else {
-    format(
-        "static "
-        "constexpr ::$proto_ns$::Metadata* $file_level_metadata$ = nullptr;\n");
-  }
+  format("static ::$proto_ns$::Metadata $file_level_metadata$[$1$];\n",
+         message_generators_.size());
+
   if (!enum_generators_.empty()) {
-    format(
-        "static "
-        "const ::$proto_ns$::EnumDescriptor* "
-        "$file_level_enum_descriptors$[$1$];\n",
-        enum_generators_.size());
+    format("static const ::$proto_ns$::EnumDescriptor* $file_level_enum_descriptors$[$1$];\n",
+           enum_generators_.size());
   } else {
-    format(
-        "static "
-        "constexpr ::$proto_ns$::EnumDescriptor const** "
-        "$file_level_enum_descriptors$ = nullptr;\n");
-  }
-  if (HasGenericServices(file_, options_) && file_->service_count() > 0) {
-    format(
-        "static "
-        "const ::$proto_ns$::ServiceDescriptor* "
-        "$file_level_service_descriptors$[$1$];\n",
-        file_->service_count());
-  } else {
-    format(
-        "static "
-        "constexpr ::$proto_ns$::ServiceDescriptor const** "
-        "$file_level_service_descriptors$ = nullptr;\n");
+    format("static constexpr ::$proto_ns$::EnumDescriptor const** "
+           "$file_level_enum_descriptors$ = nullptr;\n");
   }
 
   if (!message_generators_.empty()) {
-    format(
-        "\n"
-        "const $uint32$ $tablename$::offsets[] "
-        "PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {\n");
+    format("\nconst $uint32$ $tablename$::offsets[] "
+           "PROTOBUF_SECTION_VARIABLE(protodesc_cold) = {\n");
     format.Indent();
     std::vector<std::pair<size_t, size_t> > pairs;
     pairs.reserve(message_generators_.size());
@@ -742,17 +709,6 @@ void FileGenerator::GenerateReflectionInitializationCode(io::Printer* printer) {
     format.Outdent();
     format(
         "};\n"
-        "\n");
-  } else {
-    // we still need these symbols to exist
-    format(
-        // MSVC doesn't like empty arrays, so we add a dummy.
-        "const $uint32$ $tablename$::offsets[1] = {};\n"
-        "static constexpr ::$proto_ns$::internal::MigrationSchema* schemas = "
-        "nullptr;"
-        "\n"
-        "static constexpr ::$proto_ns$::Message* const* "
-        "file_default_instances = nullptr;\n"
         "\n");
   }
 
