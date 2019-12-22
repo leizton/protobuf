@@ -16,7 +16,7 @@
 
 
 // ============================================================================
-// FileGenerator::GenerateSourceDefaultInstance()
+//@ FileGenerator::GenerateSourceDefaultInstance()
 namespace prototest {
 class UserDefaultTypeInternal {
  public:
@@ -26,7 +26,7 @@ class UserDefaultTypeInternal {
 
 
 // ============================================================================
-// FileGenerator::GenerateInitForSCC()
+//@ FileGenerator::GenerateInitForSCC()
 // 用于初始化 default_instance
 static void InitDefaultsscc_info_User_proto_2fuser_2eproto() {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -42,7 +42,7 @@ static void InitDefaultsscc_info_User_proto_2fuser_2eproto() {
 
 
 // ============================================================================
-// FileGenerator::GenerateReflectionInitializationCode()
+//@ FileGenerator::GenerateReflectionInitializationCode()
 static ::PROTOBUF_NAMESPACE_ID::Metadata file_level_metadata_proto_2fuser_2eproto[1];
 static constexpr ::PROTOBUF_NAMESPACE_ID::EnumDescriptor const** file_level_enum_descriptors_proto_2fuser_2eproto = nullptr;
 static constexpr ::PROTOBUF_NAMESPACE_ID::ServiceDescriptor const** file_level_service_descriptors_proto_2fuser_2eproto = nullptr;
@@ -95,7 +95,7 @@ namespace prototest {
 
 
 // ============================================================================
-// MessageGenerator::GenerateClassMethods()
+//@ MessageGenerator::GenerateClassMethods()
 void User::InitAsDefaultInstance() {
 }
 class User::_Internal {
@@ -112,6 +112,7 @@ class User::_Internal {
   }
 };
 
+//@ MessageGenerator::GenerateStructors()
 User::User()
   : ::PROTOBUF_NAMESPACE_ID::Message(), _internal_metadata_(nullptr) {
   SharedCtor();
@@ -157,7 +158,7 @@ const User& User::default_instance() {
   return *internal_default_instance();
 }
 
-
+//@ MessageGenerator::GenerateClear()
 void User::Clear() {
 // @@protoc_insertion_point(message_clear_start:prototest.User)
   ::PROTOBUF_NAMESPACE_ID::uint32 cached_has_bits = 0;
@@ -177,9 +178,11 @@ void User::Clear() {
   _internal_metadata_.Clear();
 }
 
+//@ ParseLoopGenerator::GenerateParserLoop()
 const char* User::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) {
 #define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
   _Internal::HasBits has_bits{};
+  //@ ParseLoopGenerator::GenerateParseLoop()
   while (!ctx->Done(&ptr)) {
     ::PROTOBUF_NAMESPACE_ID::uint32 tag;
     ptr = ::PROTOBUF_NAMESPACE_ID::internal::ReadTag(ptr, &tag);
@@ -187,7 +190,7 @@ const char* User::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::inter
     switch (tag >> 3) {
       // required uint64 id = 1;
       case 1:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<::PROTOBUF_NAMESPACE_ID::uint8>(tag) == 8)) {
+        if (tag == 0b1000) {
           _Internal::set_has_id(&has_bits);
           id_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint(&ptr);
           CHK_(ptr);
@@ -195,14 +198,14 @@ const char* User::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::inter
         continue;
       // required string name = 2;
       case 2:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<::PROTOBUF_NAMESPACE_ID::uint8>(tag) == 18)) {
+        if (tag == 0b10010) {
           ptr = ::PROTOBUF_NAMESPACE_ID::internal::InlineGreedyStringParserUTF8Verify(_internal_mutable_name(), ptr, ctx, "prototest.User.name");
           CHK_(ptr);
         } else goto handle_unusual;
         continue;
       // optional int32 age = 3;
       case 3:
-        if (PROTOBUF_PREDICT_TRUE(static_cast<::PROTOBUF_NAMESPACE_ID::uint8>(tag) == 24)) {
+        if (tag == 0b11000) {
           _Internal::set_has_age(&has_bits);
           age_ = ::PROTOBUF_NAMESPACE_ID::internal::ReadVarint(&ptr);
           CHK_(ptr);
@@ -286,10 +289,14 @@ size_t User::RequiredFieldsByteSizeFallback() const {
 
   return total_size;
 }
+
+//@ MessageGenerator::GenerateByteSize
 size_t User::ByteSizeLong() const {
 // @@protoc_insertion_point(message_byte_size_start:prototest.User)
   size_t total_size = 0;
 
+  //= required 字段的size
+  //= _has_bits_ 在 _InternalParse() 里初始化
   if (((_has_bits_[0] & 0x00000003) ^ 0x00000003) == 0) {  // All required fields are present.
     // required string name = 2;
     total_size += 1 +
@@ -301,6 +308,7 @@ size_t User::ByteSizeLong() const {
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::UInt64Size(
         this->_internal_id());
 
+    // age是optional
   } else {
     total_size += RequiredFieldsByteSizeFallback();
   }
