@@ -1348,8 +1348,7 @@ class ParseLoopGenerator {
   void GenerateParserLoop(const Descriptor* descriptor) {
     format_.Set("classname", ClassName(descriptor));
     format_.Set("p_ns", "::" + ProtobufNamespace(options_));
-    format_.Set("pi_ns",
-                StrCat("::", ProtobufNamespace(options_), "::internal"));
+    format_.Set("pi_ns", StrCat("::", ProtobufNamespace(options_), "::internal"));
     format_.Set("GOOGLE_PROTOBUF", MacroPrefix(options_));
     std::map<std::string, std::string> vars;
     SetCommonVars(options_, &vars);
@@ -1365,9 +1364,8 @@ class ParseLoopGenerator {
               });
 
     format_(
-        "const char* $classname$::_InternalParse(const char* ptr, "
-        "$pi_ns$::ParseContext* ctx) {\n"
-        "#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure\n");
+      "const char* $classname$::_InternalParse(const char* ptr, $pi_ns$::ParseContext* ctx) {\n"
+      "#define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure\n");
     format_.Indent();
     int hasbits_size = 0;
     if (HasFieldPresence(descriptor->file())) {

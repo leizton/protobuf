@@ -2018,13 +2018,10 @@ void MessageGenerator::GenerateClassMethods(io::Printer* printer) {
         "\n");
   }
 
-  format(
-      "class $classname$::_Internal {\n"
-      " public:\n");
+  format("class $classname$::_Internal {\n public:\n");
   format.Indent();
   if (HasFieldPresence(descriptor_->file()) && HasBitsSize() != 0) {
-    format(
-        "using HasBits = decltype(std::declval<$classname$>()._has_bits_);\n");
+    format("using HasBits = decltype(std::declval<$classname$>()._has_bits_);\n");
   }
   for (auto field : FieldRange(descriptor_)) {
     field_generators_.get(field).GenerateInternalAccessorDeclarations(printer);
@@ -2068,33 +2065,31 @@ void MessageGenerator::GenerateClassMethods(io::Printer* printer) {
     format("\n");
   }
 
-  if (HasGeneratedMethods(descriptor_->file(), options_)) {
-    GenerateClear(printer);
-    format("\n");
+  GenerateClear(printer);
+  format("\n");
 
-    GenerateMergeFromCodedStream(printer);
-    format("\n");
+  GenerateMergeFromCodedStream(printer);
+  format("\n");
 
-    GenerateSerializeWithCachedSizes(printer);
-    format("\n");
+  GenerateSerializeWithCachedSizes(printer);
+  format("\n");
 
-    if (HasFastArraySerialization(descriptor_->file(), options_)) {
-      GenerateSerializeWithCachedSizesToArray(printer);
-      format("\n");
-    }
-
-    GenerateByteSize(printer);
-    format("\n");
-
-    GenerateMergeFrom(printer);
-    format("\n");
-
-    GenerateCopyFrom(printer);
-    format("\n");
-
-    GenerateIsInitialized(printer);
+  if (HasFastArraySerialization(descriptor_->file(), options_)) {
+    GenerateSerializeWithCachedSizesToArray(printer);
     format("\n");
   }
+
+  GenerateByteSize(printer);
+  format("\n");
+
+  GenerateMergeFrom(printer);
+  format("\n");
+
+  GenerateCopyFrom(printer);
+  format("\n");
+
+  GenerateIsInitialized(printer);
+  format("\n");
 
   GenerateSwap(printer);
   format("\n");

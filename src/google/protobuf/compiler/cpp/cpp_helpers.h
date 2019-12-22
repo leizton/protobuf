@@ -655,6 +655,7 @@ class Formatter {
     printer_->FormatInternal({ToString(args)...}, vars_, format);
   }
 
+  // 缩进
   void Indent() const { printer_->Indent(); }
   void Outdent() const { printer_->Outdent(); }
   io::Printer* printer() const { return printer_; }
