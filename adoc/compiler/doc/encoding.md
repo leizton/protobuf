@@ -67,7 +67,7 @@ message Boo {
 Normally, an encoded message would never have more than one instance of a non-repeated field.
 If the same field appears multiple times, the parser accepts the last value it sees.
 非repeated字段有多个实例值时, 需要进行合并操作, 即MergeFrom
-example
+- example
   Aoo a1;  a1.ParseFromString(s1);
   Aoo a2;  a2.ParseFromString(s2);
   a1.MergeFrom(a2);
