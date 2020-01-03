@@ -125,41 +125,6 @@ void MessageLite::LogInitializationErrorMessage() const {
 
 namespace internal {
 
-#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
-
-template <bool aliasing>
-bool MergePartialFromImpl(StringPiece input, MessageLite* msg) {
-  const char* ptr;
-  internal::ParseContext ctx(io::CodedInputStream::GetDefaultRecursionLimit(),
-                             aliasing, &ptr, input);
-  ptr = msg->_InternalParse(ptr, &ctx);
-  // ctx has an explicit limit set (length of string_view).
-  return ptr && ctx.EndedAtLimit();
-}
-
-template <bool aliasing>
-bool MergePartialFromImpl(io::ZeroCopyInputStream* input, MessageLite* msg) {
-  const char* ptr;
-  internal::ParseContext ctx(io::CodedInputStream::GetDefaultRecursionLimit(),
-                             aliasing, &ptr, input);
-  ptr = msg->_InternalParse(ptr, &ctx);
-  // ctx has no explicit limit (hence we end on end of stream)
-  return ptr && ctx.EndedAtEndOfStream();
-}
-
-template <bool aliasing>
-bool MergePartialFromImpl(BoundedZCIS input, MessageLite* msg) {
-  const char* ptr;
-  internal::ParseContext ctx(io::CodedInputStream::GetDefaultRecursionLimit(),
-                             aliasing, &ptr, input.zcis, input.limit);
-  ptr = msg->_InternalParse(ptr, &ctx);
-  if (PROTOBUF_PREDICT_FALSE(!ptr)) return false;
-  ctx.BackUp(ptr);
-  return ctx.EndedAtLimit();
-}
-
-#else  // !GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
-
 inline bool InlineMergePartialEntireStream(io::CodedInputStream* cis,
                                            MessageLite* message,
                                            bool aliasing) {
@@ -187,8 +152,6 @@ bool MergePartialFromImpl(io::ZeroCopyInputStream* input, MessageLite* msg) {
   io::CodedInputStream decoder(input);
   return InlineMergePartialEntireStream(&decoder, msg, aliasing);
 }
-
-#endif  // !GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
 
 template bool MergePartialFromImpl<false>(StringPiece input,
                                           MessageLite* msg);
