@@ -51,6 +51,27 @@ descriptor.h {
       Symbol result = file_->tables_->FindNestedSymbolOfType(this, key, Symbol::FIELD)
       return result.IsNull ? nullptr : result.field_descriptor
   --
+  FieldDescripotr
+    name():string&
+    number():int
+    type():Type
+    --
+    is_reqiured():bool
+    is_optional():bool
+    is_repeated():bool
+    --
+    has_default_value():bool
+    default_value_bool():bool
+    default_value_int32():int32
+    default_value_int64():int64
+    default_value_float():float
+    --
+    file():FileDescriptor*
+    --
+    enum Type {
+      TYPE_DOUBLE=1, TYPE_FLOAT, TYPE_INT64, ..., TYPE_MESSAGE, ...
+    }
+  --
   FileDescriptor
     // proto文件的描述体
     tables_            FileDescriptorTables*

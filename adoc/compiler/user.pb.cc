@@ -295,6 +295,8 @@ size_t User::ByteSizeLong() const {
 // @@protoc_insertion_point(message_byte_size_start:prototest.User)
   size_t total_size = 0;
 
+  //= required 字段的size
+  //= _has_bits_ 在 _InternalParse() 里初始化
   if (((_has_bits_[0] & 0x00000003) ^ 0x00000003) == 0) {  // All required fields are present.
     // required string name = 2;
     total_size += 1 +
@@ -306,6 +308,7 @@ size_t User::ByteSizeLong() const {
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::UInt64Size(
         this->_internal_id());
 
+    // age是optional
   } else {
     total_size += RequiredFieldsByteSizeFallback();
   }
