@@ -174,50 +174,6 @@ MessageLite* MessageLite::New(Arena* arena) const {
   return message;
 }
 
-#if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
-class ZeroCopyCodedInputStream : public io::ZeroCopyInputStream {
- public:
-  ZeroCopyCodedInputStream(io::CodedInputStream* cis) : cis_(cis) {}
-  bool Next(const void** data, int* size) final {
-    if (!cis_->GetDirectBufferPointer(data, size)) return false;
-    cis_->Skip(*size);
-    return true;
-  }
-  void BackUp(int count) final { cis_->Advance(-count); }
-  bool Skip(int count) final { return cis_->Skip(count); }
-  int64 ByteCount() const final { return 0; }
-
-  bool aliasing_enabled() { return cis_->aliasing_enabled_; }
-
- private:
-  io::CodedInputStream* cis_;
-};
-
-bool MessageLite::MergePartialFromCodedStream(io::CodedInputStream* input) {
-  ZeroCopyCodedInputStream zcis(input);
-  const char* ptr;
-  internal::ParseContext ctx(input->RecursionBudget(), zcis.aliasing_enabled(),
-                             &ptr, &zcis);
-  // MergePartialFromCodedStream allows terminating the wireformat by 0 or
-  // end-group tag. Leaving it up to the caller to verify correct ending by
-  // calling LastTagWas on input. We need to maintain this behavior.
-  ctx.TrackCorrectEnding();
-  ctx.data().pool = input->GetExtensionPool();
-  ctx.data().factory = input->GetExtensionFactory();
-  ptr = _InternalParse(ptr, &ctx);
-  if (PROTOBUF_PREDICT_FALSE(!ptr)) return false;
-  ctx.BackUp(ptr);
-  if (!ctx.EndedAtEndOfStream()) {
-    GOOGLE_DCHECK(ctx.LastTag() != 1);  // We can't end on a pushed limit.
-    if (ctx.IsExceedingLimit(ptr)) return false;
-    input->SetLastTag(ctx.LastTag());
-    return true;
-  }
-  input->SetConsumed();
-  return true;
-}
-#endif  // GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
-
 bool MessageLite::MergeFromCodedStream(io::CodedInputStream* input) {
   return MergePartialFromCodedStream(input) && IsInitializedWithErrors();
 }

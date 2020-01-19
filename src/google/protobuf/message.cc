@@ -137,11 +137,9 @@ void Message::DiscardUnknownFields() {
   return ReflectionOps::DiscardUnknownFields(this);
 }
 
-#if !GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
 bool Message::MergePartialFromCodedStream(io::CodedInputStream* input) {
   return WireFormat::ParseAndMergePartial(input, this);
 }
-#endif
 
 #if GOOGLE_PROTOBUF_ENABLE_EXPERIMENTAL_PARSER
 namespace internal {

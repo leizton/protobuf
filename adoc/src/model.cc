@@ -23,15 +23,37 @@ command_line_interface.h {
 
 message.h {
   --
+  Reflection
+    schema_  ReflectionSchema
+  --
   Metadata
     descriptor  Descriptor*
     reflection  Reflection*
   --
-  Message
+  Message ~> MessageLite
     // proto的message的基类
-    GetDescriptor() Descriptor* => GetMetadata().descriptor
-    GetReflection() Reflection* => GetMetadata().reflection
-    GetMetadata() Metadata => GetMetadataStatic()  // 返回.pb.cc定义的static变量
+    GetDescriptor():Descriptor* => GetMetadata().descriptor
+    GetReflection():Reflection* => GetMetadata().reflection
+    GetMetadata():Metadata => GetMetadataStatic()  // 返回.pb.cc定义的static变量
+}
+
+
+repeated_field.h {
+  --
+  RepeatedField<E>
+    empty():bool
+    size():int
+    operator[](int i):const-E&:const => Get(i)  // const Element& RepeatedField<Element>::Get(int i)
+    operator[](int i):E& => *Mutable(i)  // Element* RepeatedField<Element>::Mutable(int i)
+    Set(int i, E& e)
+    Add(E& e)
+    Add():E*
+}
+
+
+generated_message_reflection.h {
+  --
+  ReflectionSchema
 }
 
 
@@ -47,7 +69,7 @@ descriptor.h {
     enum_types_       EnumDescriptor*
     nested_types_     Descriptor*
     --
-    FindFieldByName(string key) FieldDescriptor*
+    FindFieldByName(string key):FieldDescriptor*
       Symbol result = file_->tables_->FindNestedSymbolOfType(this, key, Symbol::FIELD)
       return result.IsNull ? nullptr : result.field_descriptor
   --
@@ -68,7 +90,7 @@ descriptor.h {
     --
     file():FileDescriptor*
     --
-    enum Type {
+    Type enum {
       TYPE_DOUBLE=1, TYPE_FLOAT, TYPE_INT64, ..., TYPE_MESSAGE, ...
     }
   --
@@ -171,4 +193,13 @@ parser.h {
       // span
       location_.span = [parser_.input_.current.line, parser_.input_.current.column]
     }
+}
+
+
+wire_format_lite.h {
+  --
+  WireType enum {
+    WIRETYPE_VARINT=0, WIRETYPE_FIXED64, WIRETYPE_LENGTH_DELIMITED,
+    WIRETYPE_START_GROUP, WIRETYPE_END_GROUP, WIRETYPE_FIXED32,
+  }
 }

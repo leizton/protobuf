@@ -123,7 +123,7 @@ class WeakFieldMap;  // weak_field_map.h
 //   weak_field_map_offset: If the message proto has weak fields, this is the
 //                  offset of _weak_field_map_ in the generated proto. Otherwise
 //                  -1.
-struct ReflectionSchema {
+class ReflectionSchema {
  public:
   // Size of a google::protobuf::Message object of this type.
   uint32 GetObjectSize() const { return static_cast<uint32>(object_size_); }

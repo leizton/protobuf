@@ -118,10 +118,6 @@ inline int CalculateReserve(Iter begin, Iter end) {
 // set-by-index, and add accessors that are generated for all repeated fields.
 template <typename Element>
 class RepeatedField final {
-  static_assert(
-      alignof(Arena) >= alignof(Element),
-      "We only support types that have an alignment smaller than Arena");
-
  public:
   RepeatedField();
   explicit RepeatedField(Arena* arena);

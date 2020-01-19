@@ -14,12 +14,14 @@ https://developers.google.com/protocol-buffers/docs/encoding.html#structure
 
 # Message Structure
 a protocol buffer message is a series of key-value pairs
+```c++
 wire_type = {
-  varint`0, int32 int64 bool enum ...`,
-  64_bit`1, fixed64 sfixed64 double`,
-  length_delimited`2, string bytes repeated_fields embedded_message`,
-  32_bit`5, fixed32 sfixed32 float`,
+  varint            0  // int32 int64 bool enum ...
+  64_bit            1  // fixed64 sfixed64 double
+  length_delimited  2  // string bytes repeated_fields embedded_message
+  32_bit            5  // fixed32 sfixed32 float`,
 }
+```
 key = encodeVarint((field_number << 3) | wire_type). 所以field_number最大是`2^29-1`
 
 
@@ -31,7 +33,7 @@ key = encodeVarint((field_number << 3) | wire_type). 所以field_number最大是
   -3 -> 5      3 -> 6
 这个转换函数称作`zig-zags`
 sint32 n -> (n << 1) ^ (n >> 31)
-               *2      符号位移到最后一位, 负数对应奇数, 正数对应偶数
+     空出最低位放符号   符号位移到最后一位, 负数对应奇数, 正数对应偶数
 sint64 n -> (n << 1) ^ (n >> 63)
 转换成unsigned后再用varint编码
 
