@@ -20,6 +20,7 @@ key是无意义的数字编号, 所以节省空间、不能自描述
 Extensions let you declare that a range of field numbers in a message are available for third-party extensions
 类似于继承, 在其他proto文件里扩展已有message, 而不用修改原始proto文件
 - example
+~~~proto
 // a.proto
 message Aoo {
   extensions 100 to 199;
@@ -28,11 +29,13 @@ message Aoo {
 extend Aoo {
   optional int v = 101;
 }
+~~~
 
 
 # oneof
 类似union, 只有一个字段会被设置
 - example
+~~~proto
 message Aoo {
   oneof test_oneof {
     string name = 1;
@@ -45,3 +48,4 @@ a.set_name("---");
 CHECK(a.has_name());
 a.set_reserve_name("___");
 CHECK(!a.has_name());
+~~~
